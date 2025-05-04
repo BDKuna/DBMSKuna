@@ -1,0 +1,59 @@
+<sql> ::= <statement_list>
+
+<statement_list> ::= <statement> ";" { <statement> ";" }
+
+<statement> ::= <select-stmt>
+              | <create-table-stmt>
+              | <drop-table-stmt>
+              | <insert-stmt>
+              | <delete-stmt>
+              | <create-index-stmt>
+              | <drop-index-stmt>
+
+<select-stmt> ::= "SELECT" <select-list> "FROM" <table-name> [ "WHERE" <condition> ]
+
+<create-table-stmt> ::= "CREATE" "TABLE" <table-name> "(" <column-def-list> ")"
+
+<drop-table-stmt> ::= "DROP" "TABLE" <table-name>
+
+<insert-stmt> ::= "INSERT" "INTO" <table-name> [ "(" <column-list> ")" ] "VALUES" "(" <value-list> ")"
+
+<delete-stmt> ::= "DELETE" "FROM" <table-name> [ "WHERE" <condition> ]
+
+<create-index-stmt> ::= "CREATE" "INDEX" <index-name> "ON" <table-name> [ "USING" <index-type> ] "(" <column-list> ")"
+
+<drop-index-stmt> ::= "DROP" "INDEX" <index-name> [ "ON" <table-name> ]
+
+<column-def-list> ::= <column-def> { "," <column-def> }
+
+<column-def> ::= <column-name> <data-type> [ "PRIMARY" "KEY" ] [ "INDEX" <index-type> ]
+
+<data-type> ::= "INT" | "FLOAT" | "VARCHAR" "(" <number> ")" | "BOOLEAN"
+
+<column-list> ::= <column-name> { "," <column-name> }
+
+<value-list> ::= <value> { "," <value> }
+
+<select-list> ::= "*" | <column-name> { "," <column-name> }
+
+<condition> ::= <or-condition>
+
+<or-condition> ::= <and-condition> { "OR" <and-condition> }
+
+<and-condition> ::= <not-condition> { "AND" <not-condition> }
+
+<not-condition> ::= [ "NOT" ] <predicate>
+
+<predicate> ::= <simple-condition> | "(" <condition> ")"
+
+<simple-condition> ::= <column-name> <operator> <value> | <column-name> "BETWEEN" <value> "AND" <value>
+
+<operator> ::= "=" | "<>" | "<" | ">" | "<=" | ">="
+
+<value> ::= <string> | <number> | "TRUE" | "FALSE"
+
+<column-name> ::= <identifier>
+
+<table-name> ::= <identifier>
+
+<index-name> ::= <identifier>

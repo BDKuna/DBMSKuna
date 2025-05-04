@@ -1,0 +1,17 @@
+CREATE TABLE empleados (
+    id INT PRIMARY KEY INDEX BTREE,
+    nombre VARCHAR(20) INDEX HASH,
+    sueldo FLOAT INDEX AVL,
+    activo BOOL INDEX HASH
+);
+
+/*
+SELECT nombre, edad FROM usuarios WHERE edad >= 18;
+INSERT INTO personas VALUES('Juan', 30, 'M');
+UPDATE productos SET precio = 99.99 WHERE id = 5;
+DELETE FROM usuarios WHERE NOT activo AND edad < 18;
+SELECT * FROM empleados WHERE activo = TRUE AND salario BETWEEN 1000 AND 5000;
+CREATE INDEX idx_btree ON empleados USING BTREE(sueldo);
+DROP INDEX idx_btree;
+DROP TABLE empleados;
+*/
