@@ -16,7 +16,7 @@ class IndexType(Enum):
     SEQ = auto()
 
 class Column:
-    def __init__(self, name, data_type, is_primary=False, index_type=IndexType.SEQ, varchar_length=-1):
+    def __init__(self, name, data_type:DataType, is_primary=False, index_type=IndexType.SEQ, varchar_length=-1):
         self.name = name
         self.data_type = data_type
         self.is_primary = is_primary
@@ -25,7 +25,7 @@ class Column:
 
 class TableSchema:
     def __init__(self, table_name: str, columns: list[Column]):
-        self.table_name = table_name
+        self.table_name = table_name.lower()
         self.columns = columns
 
     def get_primary_key(self):

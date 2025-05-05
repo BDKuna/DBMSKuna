@@ -2,14 +2,17 @@ import struct
 import os
 import sys 
 import logging
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import logger
 from core.record_file import RecordFile, Record
+from core.schema import TableSchema, Column, DataType, IndexType
+from core import utils
 
 class NodeBPlus:
 	BLOCK_FACTOR = 3
-	FORMAT = "i" + "ii" * BLOCK_FACTOR + "iii"
+	FORMAT = "i" * BLOCK_FACTOR + "i" * (BLOCK_FACTOR + 1) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
 	NODE_SIZE = struct.calcsize(FORMAT)
 	def __init__(self, keys:list = [], pointers:list = [], isLeaf:bool = False, size:int = 0, nextNode:int = -1):
 		if isLeaf:
@@ -77,43 +80,6 @@ class NodeBPlus:
 			self.pointers[i+1], self.pointers[i] = self.pointers[i], self.pointers[i + 1]
 			i -= 1
 
-	
-	def deleteLeafId(self, key: int) -> int:
-		self.logger.debug(f"Deleting key: {key} from leaf node")
-		found = False
-		deletePos = -1
-		for i in range(self.size):
-			if self.keys[i] == key:
-				found = True
-				deletePos = self.pointers[i]
-				for j in range(i, self.size - 1):
-					self.keys[j] = self.keys[j + 1]
-					self.pointers[j] = self.pointers[j + 1]
-				self.keys[self.size - 1] = -1
-				self.pointers[self.size - 1] = -1
-				self.size -= 1
-				break
-		if not found:
-			self.logger.debug(f"Key {key} not found in leaf node")
-		return deletePos
-
-	def deleteInternalId(self, key: int):
-		self.logger.debug(f"Deleting key: {key} from internal node")
-		found = False
-		for i in range(self.size):
-			if self.keys[i] == key:
-				found = True
-				for j in range(i, self.size - 1):
-					self.keys[j] = self.keys[j + 1]
-					self.pointers[j + 1] = self.pointers[j + 2]
-				self.keys[self.size - 1] = -1
-				self.pointers[self.size] = -1
-				self.size -= 1
-				break
-		if not found:
-			self.logger.debug(f"Key {key} not found in internal node")
-
-
 	def isFull(self) -> bool:
 		return self.size == len(self.keys)
 
@@ -149,20 +115,22 @@ class NodeBPlus:
 class BPlusFile:
 	HEADER_SIZE = 4
 
-	def __init__(self, filename):
-		self.filename = filename
-		self.logger = logger.CustomLogger("BPLUSFILE")
+	def __init__(self, schema:TableSchema, column:Column):
+		if(column.index_type != IndexType.BTREE):
+			raise Exception("column index type doesn't match with BTREE")
+		self.filename = utils.get_index_file_path(schema.table_name, column.name, column.index_type)
+		self.logger = logger.CustomLogger(f"BPLUSFILE-{schema.table_name}-{column.name}".upper())
 		self.logger.logger.setLevel(logging.WARNING)
 
 		if not os.path.exists(self.filename):
 			self.logger.fileNotFound(self.filename)
-			self.initialize_file(filename) # if archive not exists
+			self.initialize_file(self.filename) # if archive not exists
 		else:
-			with open(filename, "rb+") as file:
+			with open(self.filename, "rb+") as file:
 				file.seek(0,2)
 				if(file.tell() == 0):
 					self.logger.fileIsEmpty(self.filename)
-					self.initialize_file(filename) # if archive is empty
+					self.initialize_file(self.filename) # if archive is empty
 
 	def initialize_file(self, filename):
 		with open(filename, "wb") as file:
@@ -218,11 +186,13 @@ class BPlusTree:
 	indexFile: BPlusFile
 	recordFile: RecordFile
 
-	def __init__(self):
-		self.indexFile = BPlusFile("BPlusFile.dat")
-		self.recordFile = RecordFile("RecordFile.dat")
+	def __init__(self, schema:TableSchema, column:Column):
+		if(column.data_type != DataType.INT):
+			raise Exception("column should be int, should change it")
+		self.indexFile = BPlusFile(schema, column)
+		self.recordFile = RecordFile(schema)
 		self.BLOCK_FACTOR = NodeBPlus.BLOCK_FACTOR
-		self.logger = logger.CustomLogger("BPLUSTREE")
+		self.logger = logger.CustomLogger(f"BPLUSTREE-{schema.table_name}-{column.name}".upper())
 	
 	def insert(self, record:Record):
 		self.logger.info(f"INSERT record with id: {record.id}")

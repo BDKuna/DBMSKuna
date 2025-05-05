@@ -1,5 +1,6 @@
-import struct
-from schema import DataType, Column
+import struct, os
+from core.schema import DataType, Column
+
 
 def calculate_record_format(columns: list[Column]):
     fmt = ""
@@ -18,3 +19,29 @@ def calculate_record_format(columns: list[Column]):
 
 def pad_str(s:str, length:int):
     return s.encode().ljust(length, b'\x00')
+
+
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'indices', 'files')
+
+from enum import Enum, auto
+
+class IndexType(Enum):
+    AVL = auto()
+    ISAM = auto()
+    HASH = auto()
+    BTREE = auto()
+    RTREE = auto()
+    SEQ = auto()
+
+
+def get_table_file_path(table_name: str, filename: str) -> str:
+    table_dir = os.path.join(DATA_DIR, table_name)
+    os.makedirs(table_dir, exist_ok=True)
+    return os.path.join(table_dir, filename)
+
+def get_record_file_path(table_name: str) -> str:
+    return get_table_file_path(table_name, f"{table_name}.dat")
+
+def get_index_file_path(table_name: str, column_name: str, index_type: IndexType) -> str:
+    index_name = index_type.name.lower()  # e.g., BTREE → btree
+    return get_table_file_path(table_name, f"{table_name}_{column_name}_{index_name}.dat")
