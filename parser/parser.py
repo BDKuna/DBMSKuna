@@ -516,14 +516,12 @@ class PrinterError(Exception):
 class Printer:
     def __init__(self):
         self.indent = 0
-        self.new_line = True
-        self.condition_stack = []
 
     def printer_error(self, error : str):
         raise PrinterError(error)
 
     def print_line(self, line : str):
-        print(f"{" "*self.indent}{line}", end='\n' if self.new_line else '')
+        print(f"{" "*self.indent}{line}")
 
     def print(self, sql : SQL):
         try:
@@ -571,8 +569,8 @@ class Printer:
         self.print_condition_main(stmt.condition)
         self.indent -= 2
     
-    def condition_to_str(self, condition):
-        if isinstance(condition, BinaryCondition) and condition.op not in {BinaryOp.AND, BinaryOp.OR}:
+    def binary_condition_to_str(self, condition : BinaryCondition):
+        if condition.op not in [BinaryOp.AND, BinaryOp.OR]:
             op = None
             match condition.op:
                 case BinaryOp.EQ:
@@ -589,24 +587,32 @@ class Printer:
                     op = ">="
                 case _:
                     self.printer_error("unknown operation")
-            return f"{condition.left.column_name} {op} {self.value_to_str(condition.right)}"
-        elif isinstance(condition, BooleanColumn):
-            return condition.column_name
-        elif isinstance(condition, BetweenCondition):
-            return f"{condition.left.column_name} BETWEEN {self.value_to_str(condition.mid)} AND {self.value_to_str(condition.right)}"
-        elif isinstance(condition, NotCondition):
-            return "NOT"
-        elif isinstance(condition, ConditionValue):
-            return self.value_to_str(condition)
-        elif isinstance(condition, ConditionColumn):
-            return condition.column_name
-        elif isinstance(condition, BinaryCondition):
+            return f"{self.condition_column_to_str(condition.left)} {op} {self.value_to_str(condition.right)}"
+        else:
             return "AND" if condition.op == BinaryOp.AND else "OR"
+
+    def condition_to_str(self, condition : Condition):
+        condition_type = type(condition)
+        if condition_type == BinaryCondition:
+            return self.binary_condition_to_str(condition)
+        elif condition_type == BooleanColumn:
+            return condition.column_name
+        elif condition_type == BetweenCondition:
+            return f"{condition.left.column_name} BETWEEN {self.value_to_str(condition.mid)} AND {self.value_to_str(condition.right)}"
+        elif condition_type == NotCondition:
+            return "NOT"
+        elif condition_type == ConditionValue:
+            return self.value_to_str(condition)
+        elif condition_type == ConditionColumn:
+            return condition.column_name    
         else:
             self.printer_error("unknown condition type")
 
     def value_to_str(self, val):
         return str(val.value) if isinstance(val, ConditionValue) else str(val)
+
+    def condition_column_to_str(self, condition : ConditionColumn):
+        return condition.column_name
 
     def print_condition_tree(self, condition, prefix="", is_last=True):
         connector = "└─ " if is_last else "├─ "
@@ -630,98 +636,7 @@ class Printer:
             self.print_line("-> No condition")
         else:
             self.print_condition_tree(condition)
-            # self.print_condition(condition)
         self.indent -= 2
-
-    def print_condition(self, condition : Condition):
-        if not condition:
-            return
-        condition_type = type(condition)
-        if condition_type == BinaryCondition:
-            self.print_binary_condition(condition)
-        elif condition_type == BetweenCondition:
-            self.print_between_condition(condition)
-        elif condition_type == NotCondition:
-            self.print_not_condition(condition)
-        elif condition_type == BooleanColumn:
-            self.print_boolean_condition(condition)
-        elif condition_type == ConditionColumn:
-            self.print_condition_column(condition)
-        elif condition_type == ConditionValue:
-            self.print_condition_value(condition)
-        else:
-            self.printer_error("unknown condition type")
-
-    def print_binary_condition(self, condition : BinaryCondition):
-        simple_op = True
-        op_string = ""
-        match condition.op:
-            case BinaryOp.AND:
-                op_string = "AND"
-                simple_op = False
-            case BinaryOp.OR:
-                op_string = "OR"
-                simple_op = False
-            case BinaryOp.EQ:
-                op_string = "="
-            case BinaryOp.NEQ:
-                op_string = "!="
-            case BinaryOp.LT:
-                op_string = "<"
-            case BinaryOp.GT:
-                op_string = ">"
-            case BinaryOp.LE:
-                op_string = "<="
-            case BinaryOp.GE:
-                op_string = ">="
-            case _:
-                self.printer_error("unknown operation")
-
-        if simple_op:
-            self.new_line = False
-            self.print_condition(condition.left)
-            temp = self.indent
-            self.indent = 0
-            self.print_line(f" {op_string} ")
-            self.new_line = True
-            self.print_condition(condition.right)
-            self.indent = temp
-        else:
-            self.print_line(op_string)
-            self.indent += 2
-            self.print_condition(condition.left)
-            self.print_condition(condition.right)
-            self.indent -= 2
-
-    def print_between_condition(self, condition : BetweenCondition):
-        self.new_line = False
-        self.print_condition(condition.left)
-        temp = self.indent
-        self.indent = 0
-        self.print_line(" BETWEEN ")
-        self.print_condition(condition.mid)
-        self.print_line(" AND ")
-        self.new_line = True
-        self.print_condition(condition.right)
-        self.indent = temp
-
-    def print_not_condition(self, condition : NotCondition):
-        self.new_line = False
-        self.print_line("NOT ")
-        self.new_line = True
-        temp = self.indent
-        self.indent = 0
-        self.print_condition(condition.condition)
-        self.indent = temp
-
-    def print_boolean_condition(self, condition : BooleanColumn):
-        self.print_line(condition.column_name)
-
-    def print_condition_column(self, condition : ConditionColumn):
-        self.print_line(condition.column_name)
-
-    def print_condition_value(self, condition : ConditionValue):
-        self.print_line(condition.value)
 
     def print_create_table_stmt(self, stmt : CreateTableStmt):
         self.print_line("CREATE TABLE statement:")
