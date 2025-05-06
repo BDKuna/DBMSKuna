@@ -137,8 +137,8 @@ class SQL:
 
 
 class ParseError(Exception):
-    def __init__(self, error : str, token : Token):
-        self.error = f"Parse error: {error} (at token {token})"
+    def __init__(self, error : str, line : int, pos : int, token : Token):
+        self.error = f"Parse error: {error} (at line {line} position {pos} with token {token})"
         super().__init__(self.error)
 
 class Parser:
@@ -148,7 +148,7 @@ class Parser:
         self.previous : Token = None
 
     def parse_error(self, error : str):
-        raise ParseError(error, self.current)
+        raise ParseError(error, self.scanner.line, self.scanner.pos, self.current)
 
     def match(self, type : Token.Type) -> bool:
         if self.check(type):
@@ -408,7 +408,7 @@ class Parser:
                 case "SEQ":
                     create_index_stmt.index_type = IndexType.SEQ
                 case _:
-                    self.parse_error("unkonwn index type")
+                    self.parse_error("unknown index type")
         if not self.match(Token.Type.LPAR):
             self.parse_error("expected '(' after table name or index type")
         if not self.match(Token.Type.ID):
@@ -486,7 +486,7 @@ class Parser:
         simple_condition.left = ConditionColumn(column_name)
         if not (self.match(Token.Type.LT) or self.match(Token.Type.GT) or self.match(Token.Type.LE) or self.match(Token.Type.GE) or self.match(Token.Type.EQ) or self.match(Token.Type.NEQ)):
             return BooleanColumn(column_name)
-            self.parse_error("expected a conditional operator")
+            # self.parse_error("expected a conditional operator")
         match self.previous.type:
             case Token.Type.LT:
                 simple_condition.op = BinaryOp.LT
@@ -507,6 +507,364 @@ class Parser:
         simple_condition.right = ConditionValue(self.previous.lexema)
         return simple_condition
 
+
+class PrinterError(Exception):
+    def __init__(self, error : str):
+        self.error = f"Printer error: {error}"
+        super().__init__(self.error)
+
+class Printer:
+    def __init__(self):
+        self.indent = 0
+        self.new_line = True
+        self.condition_stack = []
+
+    def printer_error(self, error : str):
+        raise PrinterError(error)
+
+    def print_line(self, line : str):
+        print(f"{" "*self.indent}{line}", end='\n' if self.new_line else '')
+
+    def print(self, sql : SQL):
+        try:
+            self.print_sql(sql)
+        except PrinterError as e:
+            print(e.error)
+
+    def print_sql(self, sql : SQL):
+        for stmt in sql.stmt_list:
+            self.print_stmt(stmt)
+
+    def print_stmt(self, stmt : Stmt):
+        stmt_type = type(stmt)
+        if stmt_type == SelectStmt:
+            self.print_select_stmt(stmt)
+        elif stmt_type == CreateTableStmt:
+            self.print_create_table_stmt(stmt)
+        elif stmt_type == DropTableStmt:
+            self.print_drop_table_stmt(stmt)
+        elif stmt_type == InsertStmt:
+            self.print_insert_stmt(stmt)
+        elif stmt_type == DeleteStmt:
+            self.print_delete_stmt(stmt)
+        elif stmt_type == CreateIndexStmt:
+            self.print_create_index_stmt(stmt)
+        elif stmt_type == DropIndexStmt:
+            self.print_drop_index_stmt(stmt)
+        else:
+            self.printer_error("unknown statement type")
+
+    def print_select_stmt(self, stmt : SelectStmt):
+        self.print_line("SELECT statement:")
+        self.indent += 2
+        self.print_line("-> Table name:")
+        self.indent += 2
+        self.print_line(f"-> {stmt.table_name}")
+        self.indent -= 2
+        self.print_line("-> Selected columns:")
+        self.indent += 2
+        if stmt.all:
+            self.print_line("-> All (*)")
+        else:
+            self.print_line(f"-> {", ".join(str(column) for column in stmt.column_list)}")
+        self.indent -= 2
+        self.print_condition_main(stmt.condition)
+        self.indent -= 2
+    
+    def condition_to_str(self, condition):
+        if isinstance(condition, BinaryCondition) and condition.op not in {BinaryOp.AND, BinaryOp.OR}:
+            op = None
+            match condition.op:
+                case BinaryOp.EQ:
+                    op = "="
+                case BinaryOp.NEQ:
+                    op = "!="
+                case BinaryOp.LT:
+                    op = "<"
+                case BinaryOp.GT:
+                    op = ">"
+                case BinaryOp.LE:
+                    op = "<="
+                case BinaryOp.GE:
+                    op = ">="
+                case _:
+                    self.printer_error("unknown operation")
+            return f"{condition.left.column_name} {op} {self.value_to_str(condition.right)}"
+        elif isinstance(condition, BooleanColumn):
+            return condition.column_name
+        elif isinstance(condition, BetweenCondition):
+            return f"{condition.left.column_name} BETWEEN {self.value_to_str(condition.mid)} AND {self.value_to_str(condition.right)}"
+        elif isinstance(condition, NotCondition):
+            return "NOT"
+        elif isinstance(condition, ConditionValue):
+            return self.value_to_str(condition)
+        elif isinstance(condition, ConditionColumn):
+            return condition.column_name
+        elif isinstance(condition, BinaryCondition):
+            return "AND" if condition.op == BinaryOp.AND else "OR"
+        else:
+            self.printer_error("unknown condition type")
+
+    def value_to_str(self, val):
+        return str(val.value) if isinstance(val, ConditionValue) else str(val)
+
+    def print_condition_tree(self, condition, prefix="", is_last=True):
+        connector = "└─ " if is_last else "├─ "
+        self.print_line(prefix + connector + self.condition_to_str(condition))
+
+        children = []
+        if isinstance(condition, BinaryCondition) and condition.op in {BinaryOp.AND, BinaryOp.OR}:
+            children = [condition.left, condition.right]
+        elif isinstance(condition, NotCondition):
+            children = [condition.condition]
+
+        new_prefix = prefix + ("   " if is_last else "│  ")
+
+        for i, child in enumerate(children):
+            self.print_condition_tree(child, new_prefix, i == len(children) - 1)
+
+    def print_condition_main(self, condition : Condition):
+        self.print_line("-> Condition:")
+        self.indent += 2
+        if not condition:
+            self.print_line("-> No condition")
+        else:
+            self.print_condition_tree(condition)
+            # self.print_condition(condition)
+        self.indent -= 2
+
+    def print_condition(self, condition : Condition):
+        if not condition:
+            return
+        condition_type = type(condition)
+        if condition_type == BinaryCondition:
+            self.print_binary_condition(condition)
+        elif condition_type == BetweenCondition:
+            self.print_between_condition(condition)
+        elif condition_type == NotCondition:
+            self.print_not_condition(condition)
+        elif condition_type == BooleanColumn:
+            self.print_boolean_condition(condition)
+        elif condition_type == ConditionColumn:
+            self.print_condition_column(condition)
+        elif condition_type == ConditionValue:
+            self.print_condition_value(condition)
+        else:
+            self.printer_error("unknown condition type")
+
+    def print_binary_condition(self, condition : BinaryCondition):
+        simple_op = True
+        op_string = ""
+        match condition.op:
+            case BinaryOp.AND:
+                op_string = "AND"
+                simple_op = False
+            case BinaryOp.OR:
+                op_string = "OR"
+                simple_op = False
+            case BinaryOp.EQ:
+                op_string = "="
+            case BinaryOp.NEQ:
+                op_string = "!="
+            case BinaryOp.LT:
+                op_string = "<"
+            case BinaryOp.GT:
+                op_string = ">"
+            case BinaryOp.LE:
+                op_string = "<="
+            case BinaryOp.GE:
+                op_string = ">="
+            case _:
+                self.printer_error("unknown operation")
+
+        if simple_op:
+            self.new_line = False
+            self.print_condition(condition.left)
+            temp = self.indent
+            self.indent = 0
+            self.print_line(f" {op_string} ")
+            self.new_line = True
+            self.print_condition(condition.right)
+            self.indent = temp
+        else:
+            self.print_line(op_string)
+            self.indent += 2
+            self.print_condition(condition.left)
+            self.print_condition(condition.right)
+            self.indent -= 2
+
+    def print_between_condition(self, condition : BetweenCondition):
+        self.new_line = False
+        self.print_condition(condition.left)
+        temp = self.indent
+        self.indent = 0
+        self.print_line(" BETWEEN ")
+        self.print_condition(condition.mid)
+        self.print_line(" AND ")
+        self.new_line = True
+        self.print_condition(condition.right)
+        self.indent = temp
+
+    def print_not_condition(self, condition : NotCondition):
+        self.new_line = False
+        self.print_line("NOT ")
+        self.new_line = True
+        temp = self.indent
+        self.indent = 0
+        self.print_condition(condition.condition)
+        self.indent = temp
+
+    def print_boolean_condition(self, condition : BooleanColumn):
+        self.print_line(condition.column_name)
+
+    def print_condition_column(self, condition : ConditionColumn):
+        self.print_line(condition.column_name)
+
+    def print_condition_value(self, condition : ConditionValue):
+        self.print_line(condition.value)
+
+    def print_create_table_stmt(self, stmt : CreateTableStmt):
+        self.print_line("CREATE TABLE statement:")
+        self.indent += 2
+        self.print_line("-> Table name:")
+        self.indent += 2
+        self.print_line(f"-> {stmt.table_name}")
+        self.indent -= 2
+        self.print_line("-> Columns:")
+        self.indent += 2
+        for index, column_def in enumerate(stmt.column_def_list):
+            self.print_line(f"-> Column {index + 1}")
+            self.indent += 2
+            self.print_column_def(column_def)
+            self.indent -= 2
+        self.indent -= 4
+
+    def print_column_def(self, column_def : ColumnDefinition):
+        self.print_line("-> Column name:")
+        self.indent += 2
+        self.print_line(f"-> {column_def.column_name}")
+        self.indent -= 2
+        self.print_line("-> Is primary key?:")
+        self.indent += 2
+        self.print_line(f"-> {"Yes" if column_def.is_primary_key else "No"}")
+        self.indent -= 2
+        self.print_line("-> Data type:")
+        self.indent += 2
+        match column_def.data_type:
+            case DataType.INT:
+                self.print_line("-> INT")
+            case DataType.FLOAT:
+                self.print_line("-> FLOAT")
+            case DataType.VARCHAR:
+                self.print_line("-> VARCHAR")
+            case DataType.DATE:
+                self.print_line("-> DATE")
+            case DataType.BOOL:
+                self.print_line("-> BOOL")
+        self.indent -= 2
+        if column_def.data_type == DataType.VARCHAR:
+            self.print_line("-> Varchar limit:")
+            self.indent += 2
+            self.print_line(f"-> {column_def.varchar_limit}")
+            self.indent -= 2
+        self.print_line("-> Index type:")
+        self.indent += 2
+        match column_def.index_type:
+            case IndexType.AVL:
+                self.print_line(f"-> AVL")
+            case IndexType.ISAM:
+                self.print_line(f"-> ISAM")
+            case IndexType.HASH:
+                self.print_line(f"-> HASH")
+            case IndexType.BTREE:
+                self.print_line(f"-> BTREE")
+            case IndexType.RTREE:
+                self.print_line(f"-> RTREE")
+            case IndexType.SEQ:
+                self.print_line(f"-> SEQ")
+        self.indent -= 2
+
+    def print_drop_table_stmt(self, stmt : DropTableStmt):
+        self.print_line("DROP TABLE statement:")
+        self.indent += 2
+        self.print_line("-> Table name:")
+        self.indent += 2
+        self.print_line(stmt.table_name)
+        self.indent -= 4
+
+    def print_insert_stmt(self, stmt : InsertStmt):
+        self.print_line("INSERT statement:")
+        self.indent += 2
+        self.print_line("-> Into table:")
+        self.indent += 2
+        self.print_line(f"-> {stmt.table_name}")
+        self.indent -= 2
+        if stmt.column_list:
+            self.print_line("-> Into columns:")
+            self.indent += 2
+            self.print_line(f"-> {", ".join(str(column) for column in stmt.column_list)}")
+            self.indent -= 2
+        self.print_line("-> Values:")
+        self.indent += 2
+        self.print_line(f"-> {", ".join(str(value) for value in stmt.value_list)}")
+        self.indent -= 4
+
+    def print_delete_stmt(self, stmt : DeleteStmt):
+        self.print_line("DELETE statement:")
+        self.indent += 2
+        self.print_line("-> From table:")
+        self.indent += 2
+        self.print_line(f"-> {stmt.table_name}")
+        self.indent -= 2
+        self.print_condition_main(stmt.condition)
+        self.indent -= 2
+
+    def print_create_index_stmt(self, stmt : CreateIndexStmt):
+        self.print_line("CREATE INDEX statement:")
+        self.indent += 2
+        self.print_line("-> Index name:")
+        self.indent += 2
+        self.print_line(f"-> {stmt.index_name}")
+        self.indent -= 2
+        self.print_line("-> On table:")
+        self.indent += 2
+        self.print_line(f"-> {stmt.table_name}")
+        self.indent -= 2
+        self.print_line("-> Index type:")
+        self.indent += 2
+        match stmt.index_type:
+            case IndexType.AVL:
+                self.print_line(f"-> AVL")
+            case IndexType.ISAM:
+                self.print_line(f"-> ISAM")
+            case IndexType.HASH:
+                self.print_line(f"-> HASH")
+            case IndexType.BTREE:
+                self.print_line(f"-> BTREE")
+            case IndexType.RTREE:
+                self.print_line(f"-> RTREE")
+            case IndexType.SEQ:
+                self.print_line(f"-> SEQ")
+        self.indent -= 2
+        self.print_line("-> On columns:")
+        self.indent += 2
+        self.print_line(f"-> {", ".join(str(column) for column in stmt.column_list)}")
+        self.indent -= 4
+
+    def print_drop_index_stmt(self, stmt : DropIndexStmt):
+        self.print_line("DROP INDEX statement:")
+        self.indent += 2
+        self.print_line("-> Index name:")
+        self.indent += 2
+        self.print_line(f"-> {stmt.index_name}")
+        self.indent -= 2
+        if stmt.table_name:
+            self.print_line("-> On table:")
+            self.indent += 2
+            self.print_line(f"-> {stmt.table_name}")
+            self.indent -= 2
+        self.indent -= 2
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Incorrect number of arguments")
@@ -514,4 +872,7 @@ if __name__ == "__main__":
 
     scanner = Scanner(sys.argv[1])
     parser = Parser(scanner)
-    parser.parse()
+    sql = parser.parse()
+    printer = Printer()
+    printer.print_sql(sql)
+

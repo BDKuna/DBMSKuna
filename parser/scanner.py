@@ -40,6 +40,8 @@ class Scanner:
 
         self.first = 0
         self.current = 0
+        self.line = 1
+        self.pos = 1
 
     def start_lexema(self) -> None:
         self.first = self.current
@@ -55,34 +57,50 @@ class Scanner:
             if state == 0:
                 c = self.input[self.current]
                 if c.isspace():
+                    if c == '\n':
+                        self.line += 1
+                        self.pos = 1
                     self.current += 1
+                    self.pos += 1
                     self.start_lexema()
                     state = 0
                 elif c == '\0':
                     return Token(Token.Type.END)
                 elif c == '-':
                     self.current += 1
+                    self.pos += 1
                     c = self.input[self.current]
                     if c == '-':
                         self.current += 1
+                        self.pos += 1
                         c = self.input[self.current]
                         while c != '\n':
                             self.current += 1
+                            self.pos += 1
                             c = self.input[self.current]
                         self.current += 1
+                        self.pos += 1
                         self.start_lexema()
+                        self.line += 1
+                        self.pos = 1
                         state = 0
                     else:
                         return Token(Token.Type.ERR)
                 elif c == '/':
                     self.current += 1
+                    self.pos += 1
                     c = self.input[self.current]
                     if c == '*':
                         self.current += 1
+                        self.pos += 1
                         c = self.input[self.current]
                         while True:
+                            if c == '\n':
+                                self.line += 1
+                                self.pos = 1
                             if c == '*':
                                 self.current += 1
+                                self.pos += 1
                                 c = self.input[self.current]
                                 if c == '/':
                                     break
@@ -90,59 +108,75 @@ class Scanner:
                                 break
                             else:
                                 self.current += 1
+                                self.pos += 1
                                 c = self.input[self.current]
                         self.current += 1
+                        self.pos += 1
                         self.start_lexema()
                         state = 0
                     else:
                         return Token(Token.Type.ERR)
                 elif c == '(':
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.LPAR)
                 elif c == ')':
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.RPAR)
                 elif c == '*':
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.STAR)
                 elif c == '<':
                     self.current += 1
+                    self.pos += 1
                     c = self.input[self.current]
                     if c == '=':
                         self.current += 1
+                        self.pos += 1
                         return Token(Token.Type.LE)
                     elif c == '>':
                         self.current += 1
+                        self.pos += 1
                         return Token(Token.Type.NEQ)
                     else:
                         return Token(Token.Type.LT)
                 elif c == '>':
                     self.current += 1
+                    self.pos += 1
                     c = self.input[self.current]
                     if c == '=':
                         self.current += 1
+                        self.pos += 1
                         return Token(Token.Type.GE)
                     else:
                         return Token(Token.Type.GT)
                 elif c == '=':
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.EQ)
                 elif c == '!':
                     self.current += 1
+                    self.pos += 1
                     c = self.input[self.current]
                     if c == '=':
                         self.current += 1
+                        self.pos += 1
                         return Token(Token.Type.NEQ)
                     else:
                         return Token(Token.Type.ERR)
                 elif c == ',':
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.COMMA)
                 elif c == '.':
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.DOT)
                 elif c == ';':
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.SEMICOLON)
                 elif c.isdigit():
                     state = 1
@@ -155,6 +189,7 @@ class Scanner:
 
             elif state == 1:
                 self.current += 1
+                self.pos += 1
                 c = self.input[self.current]
                 if c.isdigit():
                     pass
@@ -165,21 +200,25 @@ class Scanner:
 
             elif state == 2:
                 self.current += 1
+                self.pos += 1
                 c = self.input[self.current]
                 if not c.isdigit():
                     return Token(Token.Type.FLOATVAL, self.get_lexema())
 
             elif state == 3:
                 self.current += 1
+                self.pos += 1
                 c = self.input[self.current]
                 if c == "'":
                     self.current += 1
+                    self.pos += 1
                     return Token(Token.Type.STRINGVAL, self.get_lexema())
                 elif c == '\0':
                     return Token(Token.Type.ERR)
 
             elif state == 4:
                 self.current += 1
+                self.pos += 1
                 c = self.input[self.current]
                 if not (c.isalnum() or c in ["_"]):
                     state = 5
