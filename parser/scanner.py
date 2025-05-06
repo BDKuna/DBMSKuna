@@ -51,7 +51,6 @@ class Scanner:
         state = 0
         self.start_lexema()
         c = self.input[self.current]
-
         while True:
             if state == 0:
                 c = self.input[self.current]
@@ -71,6 +70,7 @@ class Scanner:
                             self.current += 1
                             c = self.input[self.current]
                         self.current += 1
+                        self.start_lexema()
                         state = 0
                     else:
                         return Token(Token.Type.ERR)
@@ -88,9 +88,11 @@ class Scanner:
                                     break
                             elif c == '\0':
                                 break
-                            self.current += 1
-                            c = self.input[self.current]
+                            else:
+                                self.current += 1
+                                c = self.input[self.current]
                         self.current += 1
+                        self.start_lexema()
                         state = 0
                     else:
                         return Token(Token.Type.ERR)
@@ -179,7 +181,7 @@ class Scanner:
             elif state == 4:
                 self.current += 1
                 c = self.input[self.current]
-                if not (c.isalnum() or c in ["_", "-"]):
+                if not (c.isalnum() or c in ["_"]):
                     state = 5
 
             elif state == 5:

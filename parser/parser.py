@@ -36,6 +36,11 @@ class NotCondition(Condition):
         super().__init__()
         self.condition = condition
 
+class BooleanColumn(Condition):
+    def __init__(self, column_name : str = None):
+        super().__init__()
+        self.column_name = column_name
+
 class ConditionColumn(Condition):
     def __init__(self, column_name : str = None):
         super().__init__()
@@ -132,8 +137,8 @@ class SQL:
 
 
 class ParseError(Exception):
-    def __init__(self, error : str):
-        self.error = f"Parse error: {error}"
+    def __init__(self, error : str, token : Token):
+        self.error = f"Parse error: {error} (at token {token})"
         super().__init__(self.error)
 
 class Parser:
@@ -143,7 +148,7 @@ class Parser:
         self.previous : Token = None
 
     def parse_error(self, error : str):
-        raise ParseError(error)
+        raise ParseError(error, self.current)
 
     def match(self, type : Token.Type) -> bool:
         if self.check(type):
@@ -324,6 +329,9 @@ class Parser:
         drop_table_stmt.table_name = self.previous.lexema
         return drop_table_stmt
 
+    def match_values(self) -> bool:
+        return self.match(Token.Type.NUMVAL) or self.match(Token.Type.FLOATVAL) or self.match(Token.Type.STRINGVAL) or self.match(Token.Type.BOOLVAL)
+
     # <insert-stmt> ::= "INSERT" "INTO" <table-name> [ "(" <column-list> ")" ] "VALUES" "(" <value-list> ")"
     # <column-list> ::= <column-name> { "," <column-name> }
     # <value-list> ::= <value> { "," <value> }
@@ -348,11 +356,11 @@ class Parser:
             self.parse_error("expected VALUES clause in INSERT statement")
         if not self.match(Token.Type.LPAR):
             self.parse_error("expected '(' after VALUES keyword")
-        if not self.match(Token.Type.NUMVAL) or self.match(Token.Type.FLOATVAL) or self.match(Token.Type.STRINGVAL) or self.match(Token.Type.BOOLVAL):
+        if not self.match_values():
             self.parse_error("expected value after '('")
         insert_stmt.add_value(self.previous.lexema)
         while self.match(Token.Type.COMMA):
-            if not self.match(Token.Type.NUMVAL) or self.match(Token.Type.FLOATVAL) or self.match(Token.Type.STRINGVAL) or self.match(Token.Type.BOOLVAL):
+            if not self.match_values():
                 self.parse_error("expected value after comma")
             insert_stmt.add_value(self.previous.lexema)
         if not self.match(Token.Type.RPAR):
@@ -428,23 +436,76 @@ class Parser:
     
     # <or-condition> ::= <and-condition> { "OR" <and-condition> }
     def parse_or_condition(self) -> Condition:
-        pass
+        left = self.parse_and_condition()
+        while self.match(Token.Type.OR):
+            right = self.parse_and_condition()
+            left = BinaryCondition(left, BinaryOp.OR, right)
+        return left
 
     # <and-condition> ::= <not-condition> { "AND" <not-condition> }
     def parse_and_condition(self) -> Condition:
-        pass
+        left = self.parse_not_condition()
+        while self.match(Token.Type.AND):
+            right = self.parse_not_condition()
+            left = BinaryCondition(left, BinaryOp.AND, right)
+        return left
 
     # <not-condition> ::= [ "NOT" ] <predicate>
-    def parse_not_condition(self) -> NotCondition:
-        pass
+    def parse_not_condition(self) -> Condition:
+        if(self.match(Token.Type.NOT)):
+            return NotCondition(self.parse_predicate())
+        return self.parse_predicate()
 
     # <predicate> ::= <simple-condition> | "(" <condition> ")"
     def parse_predicate(self) -> Condition:
-        pass
+        if(self.match(Token.Type.LPAR)):
+            condition = self.parse_or_condition()
+            if not self.match(Token.Type.RPAR):
+                self.parse_error("expected ')' to close a condition")
+            return condition
+        return self.parse_simple_condition()
 
-    # <simple-condition> ::= <column-name> <operator> <value> | <column-name> "BETWEEN" <value> "AND" <value>
+    # <simple-condition> ::= <column-name> <operator> <value> | <boolean-column-name> | <column-name> "BETWEEN" <value> "AND" <value>
     def parse_simple_condition(self) -> Condition:
-        pass
+        if not self.match(Token.Type.ID):
+            self.parse_error("expected column name in condition")
+        column_name = self.previous.lexema
+        if self.match(Token.Type.BETWEEN):
+            between_condition = BetweenCondition()
+            between_condition.left = ConditionColumn(column_name)
+            if not self.match_values():
+                self.parse_error("expected a value after BETWEEN keyword")
+            between_condition.mid = ConditionValue(self.previous.lexema)
+            if not self.match(Token.Type.AND):
+                self.parse_error("expected AND keyword after value in BETWEEN clause")
+            if not self.match_values():
+                self.parse_error("expected a value after AND keyword y BETWEEN clause")
+            between_condition.right = ConditionValue(self.previous.lexema)
+            return between_condition
+        simple_condition = BinaryCondition()
+        simple_condition.left = ConditionColumn(column_name)
+        if not (self.match(Token.Type.LT) or self.match(Token.Type.GT) or self.match(Token.Type.LE) or self.match(Token.Type.GE) or self.match(Token.Type.EQ) or self.match(Token.Type.NEQ)):
+            return BooleanColumn(column_name)
+            self.parse_error("expected a conditional operator")
+        match self.previous.type:
+            case Token.Type.LT:
+                simple_condition.op = BinaryOp.LT
+            case Token.Type.GT:
+                simple_condition.op = BinaryOp.GT
+            case Token.Type.LE:
+                simple_condition.op = BinaryOp.LE
+            case Token.Type.GE:
+                simple_condition.op = BinaryOp.GE
+            case Token.Type.EQ:
+                simple_condition.op = BinaryOp.EQ
+            case Token.Type.NEQ:
+                simple_condition.op = BinaryOp.NEQ
+            case _:
+                self.parse_error("unknown conditional operator")
+        if not self.match_values():
+            self.parse_error("expected a value after conditional operator")
+        simple_condition.right = ConditionValue(self.previous.lexema)
+        return simple_condition
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
