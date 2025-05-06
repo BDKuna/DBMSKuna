@@ -1,15 +1,21 @@
-CREATE TABLE empleados (
+CREATE TABLE ventas (
     id INT PRIMARY KEY INDEX BTREE,
-    nombre VARCHAR(20) INDEX HASH,
-    sueldo FLOAT INDEX AVL,
-    activo BOOL INDEX HASH,
-    fecha_ingreso DATE INDEX BTREE
+    producto VARCHAR(50) INDEX HASH,
+    cantidad INT,
+    precio FLOAT,
+    fecha DATE INDEX RTREE,
+    cliente_id INT
 );
 
-SELECT id, nombre, salario, fecha_ingreso
-FROM empleados
-WHERE (salario > 3000 AND departamento = 'ventas')
-   OR (activo = TRUE AND (antiguedad > 5 OR fecha_ingreso < '2020-01-01'))
-   AND nombre != 'Juan'
-   AND NOT eliminado
-   AND edad BETWEEN 25 AND 60;
+INSERT INTO ventas VALUES (1, 'Notebook', 2, 1200.50, '2023-11-15', 45);
+INSERT INTO ventas VALUES (2, 'Mouse', 5, 25.00, '2024-01-10', 46);
+INSERT INTO ventas VALUES (3, 'Teclado', 3, 45.00, '2024-02-05', 45);
+
+SELECT producto, cantidad, precio FROM ventas
+WHERE (precio > 100 AND cantidad >= 2)
+  OR (fecha BETWEEN '2024-01-01' AND '2024-12-31' AND cliente_id != 47)
+  AND NOT producto = 'Mouse';
+
+CREATE INDEX idx_fecha ON ventas USING RTREE(fecha);
+DROP INDEX idx_fecha ON ventas;
+DELETE FROM ventas WHERE fecha < '2023-01-01';

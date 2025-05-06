@@ -56,22 +56,22 @@ class Stmt:
         pass
 
 class SelectStmt(Stmt):
-    def __init__(self, table_name : str = None, condition : Condition = None, all : bool = False, column_list : list[str] = []):
+    def __init__(self, table_name : str = None, condition : Condition = None, all : bool = False, column_list : list[str] = None):
         super().__init__()
         self.table_name = table_name
         self.condition = condition
         self.all = all
-        self.column_list = column_list
+        self.column_list = column_list if column_list else []
 
     def add_column(self, column_name : str) -> None:
         self.column_list.append(column_name)
 
 class InsertStmt(Stmt):
-    def __init__(self, table_name : str = None, column_list : list[str] = [], value_list : list = []):
+    def __init__(self, table_name : str = None, column_list : list[str] = None, value_list : list = None):
         super().__init__()
         self.table_name = table_name
-        self.column_list = column_list
-        self.value_list = value_list
+        self.column_list = column_list if column_list else []
+        self.value_list = value_list if value_list else []
 
     def add_column(self, column_name : str) -> None:
         self.column_list.append(column_name)
@@ -95,10 +95,10 @@ class ColumnDefinition():
         self.varchar_limit = varchar_limit
 
 class CreateTableStmt(Stmt):
-    def __init__(self, table_name : str = None, column_def_list : list[ColumnDefinition] = []):
+    def __init__(self, table_name : str = None, column_def_list : list[ColumnDefinition] = None):
         super().__init__()
         self.table_name = table_name
-        self.column_def_list = column_def_list
+        self.column_def_list = column_def_list if column_def_list else []
     
     def add_column_definition(self, column_def : ColumnDefinition = None) -> None:
         self.column_def_list.append(column_def)
@@ -111,12 +111,12 @@ class DropTableStmt(Stmt):
 
 # <create-index-stmt> ::= "CREATE" "INDEX" <index-name> "ON" <table-name> [ "USING" <index-type> ] "(" <column-list> ")"
 class CreateIndexStmt(Stmt):
-    def __init__(self, index_name : str = None, table_name : str = None, index_type : IndexType = IndexType.BTREE, column_list : list[str] = []):
+    def __init__(self, index_name : str = None, table_name : str = None, index_type : IndexType = IndexType.BTREE, column_list : list[str] = None):
         super().__init__()
         self.index_name = index_name
         self.table_name = table_name
         self.index_type = index_type
-        self.column_list = column_list
+        self.column_list = column_list if column_list else []
 
     def add_column(self, column_name : str) -> None:
         self.column_list.append(column_name)
@@ -129,8 +129,8 @@ class DropIndexStmt(Stmt):
         self.table_name = table_name
 
 class SQL:
-    def __init__(self, stmt_list : list[Stmt] = []):
-        self.stmt_list = stmt_list
+    def __init__(self, stmt_list : list[Stmt] = None):
+        self.stmt_list = stmt_list if stmt_list else []
 
     def add_stmt(self, stmt : Stmt) -> None:
         self.stmt_list.append(stmt)
