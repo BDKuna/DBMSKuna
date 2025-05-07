@@ -1,6 +1,8 @@
 from scanner import Token, Scanner
 from enum import Enum, auto
-from sqlbuilder import DataType, IndexType
+from core.schemabuilder import TableSchemaBuilder
+from core.schema import TableSchema, DataType, IndexType
+from core.dbmanager import DBManager
 import sys
 
 class BinaryOp(Enum):
@@ -147,7 +149,7 @@ class Parser:
         self.current : Token = None
         self.previous : Token = None
 
-    def parse_error(self, error : str):
+    def error(self, error : str):
         raise ParseError(error, self.scanner.line, self.scanner.pos, self.current)
 
     def match(self, type : Token.Type) -> bool:
@@ -169,7 +171,7 @@ class Parser:
             self.current = self.scanner.next_token()
             self.previous = temp
             if self.check(Token.Type.ERR):
-                self.parse_error(f"unrecognized character: {self.current.lexema}")
+                self.error(f"unrecognized character: {self.current.lexema}")
 
     def is_at_end(self) -> bool:
         return self.current.type == Token.Type.END
@@ -189,7 +191,7 @@ class Parser:
         while(self.match(Token.Type.SEMICOLON) and self.current.type != Token.Type.END):
             sql.add_stmt(self.parse_stmt())
         if self.current.type != Token.Type.END:
-            self.parse_error("unexpected items after statement")
+            self.error("unexpected items after statement")
         return sql
     
     # <statement> ::= <select-stmt>
@@ -208,14 +210,14 @@ class Parser:
             elif self.match(Token.Type.INDEX):
                 return self.parse_create_index_stmt()
             else:
-                self.parse_error("expected TABLE or INDEX keyword after CREATE keyword")
+                self.error("expected TABLE or INDEX keyword after CREATE keyword")
         elif self.match(Token.Type.DROP):
             if self.match(Token.Type.TABLE):
                 return self.parse_drop_table_stmt()
             elif self.match(Token.Type.INDEX):
                 return self.parse_drop_index_stmt()
             else:
-                self.parse_error("expected TABLE or INDEX keyword after DROP keyword")
+                self.error("expected TABLE or INDEX keyword after DROP keyword")
         elif self.match(Token.Type.INSERT):
             return self.parse_insert_stmt()
         elif self.match(Token.Type.DELETE):
@@ -223,7 +225,7 @@ class Parser:
         elif self.match(Token.Type.SELECT):
             return self.parse_select_stmt()
         else:
-            self.parse_error("unexpected start of an instruction")
+            self.error("unexpected start of an instruction")
 
     # <select-stmt> ::= "SELECT" <select-list> "FROM" <table-name> [ "WHERE" <condition> ]
     # <select-list> ::= "*" | <column-name> { "," <column-name> }
@@ -237,13 +239,13 @@ class Parser:
                 if self.match(Token.Type.ID):
                     select_stmt.add_column(self.previous.lexema)
                 else:
-                    self.parse_error("expected column name after comma")
+                    self.error("expected column name after comma")
         else:
-            self.parse_error("expected '*' or column name after SELECT keyword")
+            self.error("expected '*' or column name after SELECT keyword")
         if not self.match(Token.Type.FROM):
-            self.parse_error("expected FROM clause in SELECT statement")
+            self.error("expected FROM clause in SELECT statement")
         if not self.match(Token.Type.ID):
-            self.parse_error("expected table name after FROM keyword")
+            self.error("expected table name after FROM keyword")
         select_stmt.table_name = self.previous.lexema
         if self.match(Token.Type.WHERE):
             select_stmt.condition = self.parse_or_condition()
@@ -255,25 +257,25 @@ class Parser:
     def parse_create_table_stmt(self) -> CreateTableStmt:
         create_table_stmt = CreateTableStmt()
         if not self.match(Token.Type.ID):
-            self.parse_error("expected table name after CREATE TABLE keyword")
+            self.error("expected table name after CREATE TABLE keyword")
         create_table_stmt.table_name = self.previous.lexema
         if not self.match(Token.Type.LPAR):
-            self.parse_error("expected '(' after table name")
+            self.error("expected '(' after table name")
         create_table_stmt.add_column_definition(self.parse_column_def())
         while self.match(Token.Type.COMMA):
             create_table_stmt.add_column_definition(self.parse_column_def())
         if not self.match(Token.Type.RPAR):
-            self.parse_error("expected ')' after column definitions")
+            self.error("expected ')' after column definitions")
         return create_table_stmt
 
     # <column-def> ::= <column-name> <data-type> [ "PRIMARY" "KEY" ] [ "INDEX" <index-type> ]
     def parse_column_def(self) -> ColumnDefinition:
         column_definition = ColumnDefinition()
         if not self.match(Token.Type.ID):
-            self.parse_error("expected column name in column definition")
+            self.error("expected column name in column definition")
         column_definition.column_name = self.previous.lexema
         if not self.match(Token.Type.DATATYPE):
-            self.parse_error("expected valid data type after column name")
+            self.error("expected valid data type after column name")
         match self.previous.lexema:
             case "INT":
                 column_definition.data_type = DataType.INT
@@ -282,25 +284,25 @@ class Parser:
             case "VARCHAR":
                 column_definition.data_type = DataType.VARCHAR
                 if not self.match(Token.Type.LPAR):
-                    self.parse_error("expected '(' after VARCHAR keyword")
+                    self.error("expected '(' after VARCHAR keyword")
                 if not self.match(Token.Type.NUMVAL):
-                    self.parse_error("expected number after '('")
+                    self.error("expected number after '('")
                 column_definition.varchar_limit = self.previous.lexema
                 if not self.match(Token.Type.RPAR):
-                    self.parse_error("expected ')' after number")
+                    self.error("expected ')' after number")
             case "DATE":
                 column_definition.data_type = DataType.DATE
             case "BOOL":
                 column_definition.data_type = DataType.BOOL
             case _:
-                self.parse_error("unknown data type")
+                self.error("unknown data type")
         if self.match(Token.Type.PRIMARY):
             if not self.match(Token.Type.KEY):
-                self.parse_error("expected KEY keyword after PRIMARY keyword")
+                self.error("expected KEY keyword after PRIMARY keyword")
             column_definition.is_primary_key = True
         if self.match(Token.Type.INDEX):
             if not self.match(Token.Type.INDEXTYPE):
-                self.parse_error("expected valid index type in column definition")
+                self.error("expected valid index type in column definition")
             match self.previous.lexema:
                 case "AVL":
                     column_definition.index_type = IndexType.AVL
@@ -315,7 +317,7 @@ class Parser:
                 case "SEQ":
                     column_definition.index_type = IndexType.SEQ
                 case _:
-                    self.parse_error("unknown index type")
+                    self.error("unknown index type")
         else:
             column_definition.index_type = IndexType.SEQ
         return column_definition
@@ -325,7 +327,7 @@ class Parser:
     def parse_drop_table_stmt(self) -> DropTableStmt:
         drop_table_stmt = DropTableStmt()
         if not self.match(Token.Type.ID):
-            self.parse_error("expected table name after DROP TABLE keyword")
+            self.error("expected table name after DROP TABLE keyword")
         drop_table_stmt.table_name = self.previous.lexema
         return drop_table_stmt
 
@@ -338,42 +340,42 @@ class Parser:
     def parse_insert_stmt(self) -> InsertStmt:
         insert_stmt = InsertStmt()
         if not self.match(Token.Type.INTO):
-            self.parse_error("expected INTO keyword after INSERT keyword")
+            self.error("expected INTO keyword after INSERT keyword")
         if not self.match(Token.Type.ID):
-            self.parse_error("expected table name after INSERT INTO keyword")
+            self.error("expected table name after INSERT INTO keyword")
         insert_stmt.table_name = self.previous.lexema
         if self.match(Token.Type.LPAR):
             if not self.match(Token.Type.ID):
-                self.parse_error("expected column name after '('")
+                self.error("expected column name after '('")
             insert_stmt.add_column(self.previous.lexema)
             while self.match(Token.Type.COMMA):
                 if not self.match(Token.Type.ID):
-                    self.parse_error("expected column name after comma")
+                    self.error("expected column name after comma")
                 insert_stmt.add_column(self.previous.lexema)
             if not self.match(Token.Type.RPAR):
-                self.parse_error("expected ')' after column names")
+                self.error("expected ')' after column names")
         if not self.match(Token.Type.VALUES):
-            self.parse_error("expected VALUES clause in INSERT statement")
+            self.error("expected VALUES clause in INSERT statement")
         if not self.match(Token.Type.LPAR):
-            self.parse_error("expected '(' after VALUES keyword")
+            self.error("expected '(' after VALUES keyword")
         if not self.match_values():
-            self.parse_error("expected value after '('")
+            self.error("expected value after '('")
         insert_stmt.add_value(self.previous.lexema)
         while self.match(Token.Type.COMMA):
             if not self.match_values():
-                self.parse_error("expected value after comma")
+                self.error("expected value after comma")
             insert_stmt.add_value(self.previous.lexema)
         if not self.match(Token.Type.RPAR):
-            self.parse_error("expected ')' after values")
+            self.error("expected ')' after values")
         return insert_stmt
 
     # <delete-stmt> ::= "DELETE" "FROM" <table-name> [ "WHERE" <condition> ]
     def parse_delete_stmt(self) -> DeleteStmt:
         delete_stmt = DeleteStmt()
         if not self.match(Token.Type.FROM):
-            self.parse_error("expected FROM keyword after DELETE keyword")
+            self.error("expected FROM keyword after DELETE keyword")
         if not self.match(Token.Type.ID):
-            self.parse_error("expected table name after DELETE FROM keyword")
+            self.error("expected table name after DELETE FROM keyword")
         delete_stmt.table_name = self.previous.lexema
         if self.match(Token.Type.WHERE):
             delete_stmt.condition = self.parse_or_condition()
@@ -384,16 +386,16 @@ class Parser:
     def parse_create_index_stmt(self) -> CreateIndexStmt:
         create_index_stmt = CreateIndexStmt()
         if not self.match(Token.Type.ID):
-            self.parse_error("expected index name after CREATE INDEX keyword")
+            self.error("expected index name after CREATE INDEX keyword")
         create_index_stmt.index_name = self.previous.lexema
         if not self.match(Token.Type.ON):
-            self.parse_error("expected ON keyword after index name")
+            self.error("expected ON keyword after index name")
         if not self.match(Token.Type.ID):
-            self.parse_error("expected table name after ON keyword")
+            self.error("expected table name after ON keyword")
         create_index_stmt.table_name = self.previous.lexema
         if self.match(Token.Type.USING):
             if not self.match(Token.Type.INDEXTYPE):
-                self.parse_error("expected valid index type after USING keyword")
+                self.error("expected valid index type after USING keyword")
             match self.previous.lexema:
                 case "AVL":
                     create_index_stmt.index_type = IndexType.AVL
@@ -408,29 +410,29 @@ class Parser:
                 case "SEQ":
                     create_index_stmt.index_type = IndexType.SEQ
                 case _:
-                    self.parse_error("unknown index type")
+                    self.error("unknown index type")
         if not self.match(Token.Type.LPAR):
-            self.parse_error("expected '(' after table name or index type")
+            self.error("expected '(' after table name or index type")
         if not self.match(Token.Type.ID):
-            self.parse_error("expected column name after '('")
+            self.error("expected column name after '('")
         create_index_stmt.add_column(self.previous.lexema)
         while self.match(Token.Type.COMMA):
             if not self.match(Token.Type.ID):
-                self.parse_error("expected column name after comma")
+                self.error("expected column name after comma")
             create_index_stmt.add_column(self.previous.lexema)
         if not self.match(Token.Type.RPAR):
-            self.parse_error("expected ')' after column names")
+            self.error("expected ')' after column names")
         return create_index_stmt
 
     # <drop-index-stmt> ::= "DROP" "INDEX" <index-name> [ "ON" <table-name> ]
     def parse_drop_index_stmt(self) -> DropIndexStmt:
         drop_index_stmt = DropIndexStmt()
         if not self.match(Token.Type.ID):
-            self.parse_error("expected index name after DROP INDEX keyword")
+            self.error("expected index name after DROP INDEX keyword")
         drop_index_stmt.index_name = self.previous.lexema
         if self.match(Token.Type.ON):
             if not self.match(Token.Type.ID):
-                self.parse_error("expected table name after ON keyword")
+                self.error("expected table name after ON keyword")
             drop_index_stmt.table_name = self.previous.lexema
         return drop_index_stmt
     
@@ -461,32 +463,32 @@ class Parser:
         if(self.match(Token.Type.LPAR)):
             condition = self.parse_or_condition()
             if not self.match(Token.Type.RPAR):
-                self.parse_error("expected ')' to close a condition")
+                self.error("expected ')' to close a condition")
             return condition
         return self.parse_simple_condition()
 
     # <simple-condition> ::= <column-name> <operator> <value> | <boolean-column-name> | <column-name> "BETWEEN" <value> "AND" <value>
     def parse_simple_condition(self) -> Condition:
         if not self.match(Token.Type.ID):
-            self.parse_error("expected column name in condition")
+            self.error("expected column name in condition")
         column_name = self.previous.lexema
         if self.match(Token.Type.BETWEEN):
             between_condition = BetweenCondition()
             between_condition.left = ConditionColumn(column_name)
             if not self.match_values():
-                self.parse_error("expected a value after BETWEEN keyword")
+                self.error("expected a value after BETWEEN keyword")
             between_condition.mid = ConditionValue(self.previous.lexema)
             if not self.match(Token.Type.AND):
-                self.parse_error("expected AND keyword after value in BETWEEN clause")
+                self.error("expected AND keyword after value in BETWEEN clause")
             if not self.match_values():
-                self.parse_error("expected a value after AND keyword y BETWEEN clause")
+                self.error("expected a value after AND keyword y BETWEEN clause")
             between_condition.right = ConditionValue(self.previous.lexema)
             return between_condition
         simple_condition = BinaryCondition()
         simple_condition.left = ConditionColumn(column_name)
         if not (self.match(Token.Type.LT) or self.match(Token.Type.GT) or self.match(Token.Type.LE) or self.match(Token.Type.GE) or self.match(Token.Type.EQ) or self.match(Token.Type.NEQ)):
             return BooleanColumn(column_name)
-            # self.parse_error("expected a conditional operator")
+            # self.error("expected a conditional operator")
         match self.previous.type:
             case Token.Type.LT:
                 simple_condition.op = BinaryOp.LT
@@ -501,14 +503,14 @@ class Parser:
             case Token.Type.NEQ:
                 simple_condition.op = BinaryOp.NEQ
             case _:
-                self.parse_error("unknown conditional operator")
+                self.error("unknown conditional operator")
         if not self.match_values():
-            self.parse_error("expected a value after conditional operator")
+            self.error("expected a value after conditional operator")
         simple_condition.right = ConditionValue(self.previous.lexema)
         return simple_condition
 
 
-class PrinterError(Exception):
+class PrintError(Exception):
     def __init__(self, error : str):
         self.error = f"Printer error: {error}"
         super().__init__(self.error)
@@ -517,8 +519,8 @@ class Printer:
     def __init__(self):
         self.indent = 0
 
-    def printer_error(self, error : str):
-        raise PrinterError(error)
+    def error(self, error : str):
+        raise PrintError(error)
 
     def print_line(self, line : str):
         print(f"{" "*self.indent}{line}")
@@ -526,10 +528,12 @@ class Printer:
     def print(self, sql : SQL):
         try:
             self.print_sql(sql)
-        except PrinterError as e:
+        except PrintError as e:
             print(e.error)
 
     def print_sql(self, sql : SQL):
+        if not sql:
+            self.error("Invalid sql")
         for stmt in sql.stmt_list:
             self.print_stmt(stmt)
 
@@ -550,7 +554,7 @@ class Printer:
         elif stmt_type == DropIndexStmt:
             self.print_drop_index_stmt(stmt)
         else:
-            self.printer_error("unknown statement type")
+            self.error("unknown statement type")
 
     def print_select_stmt(self, stmt : SelectStmt):
         self.print_line("SELECT statement:")
@@ -586,7 +590,7 @@ class Printer:
                 case BinaryOp.GE:
                     op = ">="
                 case _:
-                    self.printer_error("unknown operation")
+                    self.error("unknown operation")
             return f"{self.condition_column_to_str(condition.left)} {op} {self.value_to_str(condition.right)}"
         else:
             return "AND" if condition.op == BinaryOp.AND else "OR"
@@ -606,7 +610,7 @@ class Printer:
         elif condition_type == ConditionColumn:
             return condition.column_name    
         else:
-            self.printer_error("unknown condition type")
+            self.error("unknown condition type")
 
     def value_to_str(self, val):
         return str(val.value) if isinstance(val, ConditionValue) else str(val)
@@ -780,6 +784,57 @@ class Printer:
             self.indent -= 2
         self.indent -= 2
 
+
+class InterpretError(Exception):
+    def __init__(self, error : str):
+        self.error = f"Runtime error: {error}"
+        super().__init__(self.error)
+
+
+class Interpreter:
+    def __init__(self):
+        pass
+
+    def error(self, error : str):
+        raise InterpretError(error)
+    
+    def interpret(self, sql : SQL):
+        try:
+            self.interpret_sql(sql)
+        except InterpretError as e:
+            print(e.error)
+
+    def interpret_sql(self, sql : SQL):
+        if not sql:
+            self.error("Invalid sql")
+        for stmt in sql.stmt_list:
+            self.interpret_stmt(stmt)
+
+    def interpret_stmt(self, stmt : Stmt):
+        stmt_type = type(stmt)
+        if stmt_type == SelectStmt:
+            self.interpret_select_stmt(stmt)
+        elif stmt_type == CreateTableStmt:
+            self.interpret_create_table_stmt(stmt)
+        elif stmt_type == DropTableStmt:
+            self.interpret_drop_table_stmt(stmt)
+        elif stmt_type == InsertStmt:
+            self.interpret_insert_stmt(stmt)
+        elif stmt_type == DeleteStmt:
+            self.interpret_delete_stmt(stmt)
+        elif stmt_type == CreateIndexStmt:
+            self.interpret_create_index_stmt(stmt)
+        elif stmt_type == DropIndexStmt:
+            self.interpret_drop_index_stmt(stmt)
+        else:
+            self.error("unknown statement type")
+
+    def interpret_select_stmt(stmt : SelectStmt):
+        pass
+
+    def interpret_create_table_stmt(stmt):
+        pass
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Incorrect number of arguments")
@@ -789,5 +844,7 @@ if __name__ == "__main__":
     parser = Parser(scanner)
     sql = parser.parse()
     printer = Printer()
-    printer.print_sql(sql)
+    printer.print(sql)
+    interpreter = Interpreter()
+    interpreter.interpret(sql)
 
