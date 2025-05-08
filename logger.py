@@ -46,6 +46,9 @@ class CustomLogger:
 	def successfulInsertion(self, file, id):
 		self.logger.info(f"Successful insertion on file: {file} of record with id: {id}")
 
+	def patchingNextDel(self, file, id, next_del):
+		self.logger.info(f"Patched NextDel of record with id: {id} in file: {file} to: {next_del}")
+
 	def warning(self, text):
 		self.logger.warning(text)
 	

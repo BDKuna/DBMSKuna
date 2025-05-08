@@ -194,9 +194,9 @@ class BPlusTree:
 		self.BLOCK_FACTOR = NodeBPlus.BLOCK_FACTOR
 		self.logger = logger.CustomLogger(f"BPLUSTREE-{schema.table_name}-{column.name}".upper())
 	
-	def insert(self, record:Record):
+	def insert(self, pos:int, val:any):
 		self.logger.info(f"INSERT record with id: {record.id}")
-		pos = self.recordFile.append(record)
+
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
 			self.logger.info(f"Creating new root, first record with id: {record.id}")
