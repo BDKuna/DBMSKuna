@@ -41,6 +41,13 @@ class Record:
 				values[i] = values[i].decode().strip("\x00")
 		return cls(schema, values)
 
+	def __str__(self):
+		attrs = [
+			f"{col.name}: {val}"
+			for col, val in zip(self.schema.columns, self.values)
+		]
+		return f"Record [{', '.join(attrs)}]"
+
 
 class FreeListNode:
 	def __init__(self, record: Record, next_del=-1):
@@ -61,11 +68,12 @@ class FreeListNode:
 
 	@classmethod
 	def unpack(cls, schema:TableSchema, raw_bytes):
-		format = utils.calculate_record_format(schema.columns)
-		values = list(struct.unpack(format, raw_bytes))
-		record = Record(schema, values[:-1])
-		next_del = values[-1]
+		record = Record.unpack(schema, raw_bytes[:-4])
+		# Unpack the last 4 bytes as the next_del
+		# struct.calcsize("i") = 4 bytes
+		next_del = struct.unpack("i", raw_bytes[-4:])[0]
 		return cls(record, next_del)
+
 
 
 
@@ -90,7 +98,7 @@ class RecordFile:
 	# ----- Private methods -----
 
 	def _initialize_file(self):
-		with open(self.filename, "wb") as file:
+		with open(self.filename, "wb+") as file:
 			header = file.read(self.HEADER_SIZE)
 			if not header:
 				self.logger.fileIsEmpty(self.filename)
@@ -112,13 +120,15 @@ class RecordFile:
 	def _append_node(self, record: Record) -> int:
 		"""Append a record to the end of the file and return its position"""
 		with open(self.filename, "ab") as file:
-			offset = (file.tell() - self.HEADER_SIZE) // self.node_size
-			file.write(record.pack())
-			self.logger.writingRecord(self.filename, offset, record.values[0])  # should be the first an id
+			offset = file.tell() // self.node_size
+			node = FreeListNode(record)
+			file.write(node.pack())
+			self.logger.writingRecord(self.filename, offset, record.values[0], node.next_del)  # should be the first an id
 			return offset
 
 	def _read_node(self, pos: int) -> FreeListNode:
 		with open(self.filename, "rb") as file:
+			self.logger.readingNode(self.filename, pos)
 			file.seek(self.HEADER_SIZE + pos * self.node_size)
 			data = file.read(self.node_size)
 			if not data:
@@ -159,9 +169,29 @@ class RecordFile:
 			self.logger.notFoundRecord(self.filename, pos)
 			return None # todo: handle this case
 	
-	def delete(self, pos: int):
+	def delete(self, pos: int)-> Record:
 		"""Delete a record at the given position and add it to the free list"""
-		tdel_node = self._read_node(pos)
+		tdel_node = self._read_node(pos) #to delete node
 		tdel_node.next_del = self._get_header()
 		self._set_header(pos)
 		self._patch_node(pos, tdel_node)
+		return tdel_node.record
+
+	def clear(self):
+		self.logger.info("Cleaning data, removing files")
+		os.remove(self.filename)
+
+	def __str__(self):
+		print(f"RecordFile: {self.filename}")
+		print(f"Header: {self.HEADER}")
+		print(f"Node size: {self.node_size}")
+		i = 0
+		while True:
+			try:
+				node = self._read_node(i)
+				print(f"Node {i}: {node.record.values} -> {node.next_del}")
+				i += 1
+			except Exception as e:
+				break
+		return ""
+

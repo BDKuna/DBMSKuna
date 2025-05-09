@@ -22,8 +22,8 @@ class CustomLogger:
 	def invalidPosition(self, file, pos):
 		self.logger.error(f"Trying to access invalid position: {pos} in file: {file}")
 
-	def writingRecord(self, file, pos, id):
-		self.logger.info(f"Writing record with id: {id} in file: {file} at position: {pos}")
+	def writingRecord(self, file, pos, id, nextDel):
+		self.logger.info(f"Writing record with id: {id} in file: {file} at position: {pos} with NextDel: {nextDel}")
 
 	def fileIsEmpty(self, file):
 		self.logger.warning(f"File: {file} is empty, initializing it")
@@ -49,6 +49,11 @@ class CustomLogger:
 	def patchingNextDel(self, file, id, next_del):
 		self.logger.info(f"Patched NextDel of record with id: {id} in file: {file} to: {next_del}")
 
+	def readingNode(self, file, pos): #AVL
+		self.logger.info(f"Reading node from file: {file} at position: {pos}")
+
+	def writingNode(self, file, pos, val, right, left, height): # AVL
+		self.logger.info(f"Writing node in file: {file} at position: {pos} with val: {val}, right: {right}, left: {left}, height: {height}")
 	def warning(self, text):
 		self.logger.warning(text)
 	

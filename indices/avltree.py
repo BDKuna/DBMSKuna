@@ -4,70 +4,10 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logger
+from core.record_file import RecordFile, Record
+from core.schema import TableSchema, Column, DataType, IndexType
+from core import utils
 
-
-class Record:
-    FORMAT = "i30si"
-    STRUCT = struct.Struct(FORMAT)
-    RECORD_SIZE = struct.calcsize(FORMAT)
-
-    def __init__(self, id = 0, nombre = "", cantidad = 0):
-        self.id = id
-        self.nombre = nombre
-        self.cantidad = cantidad
-        self.logger = logger.CustomLogger("AVL_RECORD")
-
-    def debug(self):
-        self.logger.debug(f"Record with id: {self.id}, name: {self.nombre}, quantity: {self.cantidad}")
-
-    def pack(self) -> bytes:
-        return self.STRUCT.pack(self.id,
-                           self.nombre.encode(),
-                           self.cantidad
-                           )
-
-    @staticmethod
-    def unpack(record: bytes):
-        if record is None:
-            raise Exception("record is None")
-        id, nombre, cantidad = Record.STRUCT.unpack(record)
-        return Record(id, nombre.decode().strip("\x00"), cantidad)
-
-
-class RecordFile:
-    def __init__(self, filename):
-        self.filename = filename
-        self.logger = logger.CustomLogger("RECORDFILE")
-
-        if not os.path.exists(self.filename):
-            self.logger.fileNotFound(self.filename)
-            self.initialize_file(filename)  # if archive not exists
-
-    def initialize_file(self, filename):
-        with open(filename, "wb") as file:
-            pass
-
-    def append(self, record: Record) -> int:
-        with open(self.filename, "ab") as file:
-            offset = file.tell() // Record.RECORD_SIZE
-            data = record.pack()
-            file.write(data)
-            self.logger.writingRecord(self.filename, offset, record.id)
-            return offset
-
-    def read(self, pos: int) -> Record:
-        with open(self.filename, "rb") as file:
-            file.seek(pos * Record.RECORD_SIZE)
-            data = file.read(Record.RECORD_SIZE)
-            if not data or len(data) < AVLNode.NODE_SIZE:
-                self.logger.invalidPosition(self.filename, pos)
-                raise Exception(f"Invalid record position: {pos}")
-            record = Record.unpack(data)
-            self.logger.foundRecord(self.filename, pos, record.id)
-            return record
-
-    def delete(self, pos: int):
-        pass
 
 class AVLNode:
     FORMAT = "iiiii"
@@ -98,8 +38,10 @@ class AVLFile:
     HEADER_FORMAT = 'i'
     HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
     HEADER_STRUCT = struct.Struct(HEADER_FORMAT)
-    def __init__(self, filename: str):
-        self.filename = filename
+    def __init__(self, schema: TableSchema, column: Column):
+        if column.index_type != IndexType.AVL:
+            raise Exception("column index type doesn't match with AVL")
+        self.filename = utils.get_index_file_path(schema.table_name, column.name, IndexType.AVL)
         self.logger = logger.CustomLogger("AVL-TREE")
         self.root = -1
         if not os.path.exists(self.filename):
@@ -170,16 +112,15 @@ class AVLTree:
     indexFile: AVLFile
     recordFile: RecordFile
 
-    def __init__(self):
-        self.indexFile = AVLFile("idx_AVL.dat")
-        self.recordFile = RecordFile("data.dat")
+    def __init__(self, schema: TableSchema, column: Column):
+        self.indexFile = AVLFile(schema, column)
+        self.recordFile = RecordFile(schema)
         self.NODE_SIZE = AVLNode.NODE_SIZE
         self.logger = logger.CustomLogger("AVL-Tree")
 
     def clear(self):
         self.logger.info("Cleaning data, removing files")
         os.remove(self.indexFile.filename)
-        os.remove(self.recordFile.filename)
 
     # --- Funciones auxiliares ---
 
@@ -401,14 +342,14 @@ class AVLTree:
         self._range_search_aux(r, i, j)
         return r
 
-    def search(self, key:int) -> Record | None:
+    def search(self, key:int) -> int:
         self.logger.warning(f"SEARCHING: {key}")
         pos = self._seek(key)
         if pos == -1:
             self.logger.warning("The id is not on the tree")
-            return None
+            return -1
         record_pos = self.indexFile.read(pos).pointer
-        return self.recordFile.read(record_pos)
+        return record_pos
 
     def getAll(self) -> list[int]:
         r = []
