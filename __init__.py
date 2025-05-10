@@ -22,7 +22,6 @@ class miniManager:
             raise Exception(f"Índice {key} no encontrado")
         if self.indexes[key] is None:
             raise Exception(f"Índice {key} no es un índice AVL")
-        print(self.indexes[key])
         return [self.indexes[key].search(value)]
 
     def _search_range(self, key: str, min_value, max_value) -> list[int]:
@@ -52,13 +51,16 @@ class miniManager:
         # Eliminar los registros del archivo de registros
         to_delete = []
         for record_pos in records_pos:
-            to_delete.append(self.record_file.delete(record_pos))
+            to_delete.append(self.record_file.read(record_pos))
 
         # Eliminar de los índices
         for r in to_delete:
             for j, key in enumerate(self.indexes.keys()):
                 if self.indexes[key] is not None:
                     self.indexes[key].delete(r.values[j])
+        # Eliminar del archivo de registros
+        for record_pos in records_pos:
+             self.record_file.delete(record_pos)
 
     def search(self, key: str, value) -> Record:
         # Buscar en el índice
@@ -86,44 +88,61 @@ class miniManager:
             if self.indexes[i] is not None:
                 self.indexes[i].clear()
 
+    def __str__(self):
+        r = "MANAGER\n"
+        r += "Record File:\n"
+        r += str(self.record_file) + "\n"
+        r += "Indexes:\n"
+        for i in self.indexes.keys():
+            r += str(i) + "\n"
+            r += str(self.indexes[i]) + "\n"
+
+        r += "Schema:\n"
+        r += str(self.schema) + "\n"
+        r += "-------------------------------------------\n"
+        return r
 
 
 
 
 
-# Ejemplo de uso
-columns = [
-    Column("id", DataType.INT, index_type=IndexType.AVL, is_primary=True),
-    Column("name", DataType.VARCHAR, varchar_length=50),
-    Column("age", DataType.INT, index_type=IndexType.AVL)
-]
-schema = TableSchema("users", columns)
-manager = miniManager(schema)
+if __name__ == "__main__":
+    # Ejemplo de uso
+    columns = [
+        Column("id", DataType.INT, index_type=IndexType.AVL, is_primary=True),
+        Column("name", DataType.VARCHAR, varchar_length=50),
+        Column("age", DataType.INT, index_type=IndexType.AVL)
+    ]
+    schema = TableSchema("users", columns)
+    manager = miniManager(schema)
+    values = [
+        [1, "Alice", 30],
+        [2, "Bob", 25],
+        [3, "Charlie", 35],
+        [4, "David", 40],
+        [5, "Eva", 28],
+        [6, "Frank", 32],
+        [7, "Grace", 27],
+        [8, "Hannah", 29],
+        [9, "Ian", 31],
+        [10, "Julia", 26]
+    ]
+
+    try:
+        for i in values[:5]:
+            # Insertar un registro
+            manager.insert(i)
+        for i in manager.getAll():
+            print(i)
+        result = manager._search_equality("age", 30)
+        manager.delete(result)
+        for i in manager.getAll():
+            print(i)
 
 
-values = [
-    [1, "Alice", 30],
-    [2, "Bob", 25],
-    [3, "Charlie", 35]
-]
-
-try:
-    # Insertar un registro
-    manager.insert(values[0])
-    # Insertar otro registro
-    manager.insert(values[1])
-    result = manager._search_equality("age", 30)
-    print(result)
-    manager.delete(result)
-    print(manager.record_file)
-
-    for i in manager.getAll():
-        print(i)
-except Exception as e:
-    manager.clear()
-    raise e
-finally:
-    # Limpiar el archivo de registros y los índices
+    except Exception as e:
+        manager.clear()
+        raise e
     manager.clear()
 
 

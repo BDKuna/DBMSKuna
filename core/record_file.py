@@ -50,7 +50,7 @@ class Record:
 
 
 class FreeListNode:
-	def __init__(self, record: Record, next_del=-1):
+	def __init__(self, record: Record, next_del=-2):
 		self.record = record
 		self.next_del = next_del
 		self.logger = logger.CustomLogger(f"FREELIST-NODE-{record.schema.table_name}".upper())
@@ -129,7 +129,7 @@ class RecordFile:
 	def _read_node(self, pos: int) -> FreeListNode:
 		with open(self.filename, "rb") as file:
 			self.logger.readingNode(self.filename, pos)
-			file.seek(self.HEADER_SIZE + pos * self.node_size)
+			file.seek(self.HEADER_SIZE + (pos * self.node_size))
 			data = file.read(self.node_size)
 			if not data:
 				self.logger.invalidPosition(self.filename, pos)
@@ -139,19 +139,20 @@ class RecordFile:
 			return node
 
 	def _patch_node(self, pos: int, node: FreeListNode):
-		with open(self.filename, "wb+") as file:
+		with open(self.filename, "rb+") as file:
 			offset = self.HEADER_SIZE + pos * self.node_size
-			if offset > os.path.getsize(self.filename):
+			file.seek(offset)
+			if file.tell() != offset:
 				self.logger.invalidPosition(self.filename, pos)
 				raise Exception(f"Invalid record position: {pos}")
-			file.seek(offset)
 			file.write(node.pack())
-			self.logger.writingRecord(self.filename, pos, node.record.values[0])
+			self.logger.writingRecord(self.filename, pos, node.record.values[0], node.next_del)
 
 	# ----- Public methods -----
 
 	def append(self, record: Record) -> int:
 		"""Append a record to the file and return its position"""
+		self.logger.warning(f"APPENDING Record {record.values}")
 		if self._get_header() == -1:
 			return self._append_node(record)
 		tdel_pos = self._get_header() # position of the record to delete
@@ -162,8 +163,9 @@ class RecordFile:
 	
 	def read(self, pos: int) -> Record:
 		"""Read a record from the file at the given position"""
+		self.logger.warning(f"READING Record at pos {pos}")
 		node = self._read_node(pos)
-		if node.next_del == -1:
+		if node.next_del == -2:
 			return node.record
 		else:
 			self.logger.notFoundRecord(self.filename, pos)
@@ -171,6 +173,7 @@ class RecordFile:
 	
 	def delete(self, pos: int)-> Record:
 		"""Delete a record at the given position and add it to the free list"""
+		self.logger.warning(f"DELETING Record at pos {pos}")
 		tdel_node = self._read_node(pos) #to delete node
 		tdel_node.next_del = self._get_header()
 		self._set_header(pos)
@@ -182,7 +185,7 @@ class RecordFile:
 		os.remove(self.filename)
 
 	def __str__(self):
-		print(f"RecordFile: {self.filename}")
+		print("RecordFile:")
 		print(f"Header: {self.HEADER}")
 		print(f"Node size: {self.node_size}")
 		i = 0

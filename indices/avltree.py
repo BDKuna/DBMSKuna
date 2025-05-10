@@ -42,7 +42,7 @@ class AVLFile:
         if column.index_type != IndexType.AVL:
             raise Exception("column index type doesn't match with AVL")
         self.filename = utils.get_index_file_path(schema.table_name, column.name, IndexType.AVL)
-        self.logger = logger.CustomLogger("AVL-TREE")
+        self.logger = logger.CustomLogger(f"AVLFIlE-{schema.table_name}-{column.name}")
         self.root = -1
         if not os.path.exists(self.filename):
             self.logger.fileNotFound(self.filename)
@@ -113,10 +113,11 @@ class AVLTree:
     recordFile: RecordFile
 
     def __init__(self, schema: TableSchema, column: Column):
+        self.column = column
         self.indexFile = AVLFile(schema, column)
         self.recordFile = RecordFile(schema)
         self.NODE_SIZE = AVLNode.NODE_SIZE
-        self.logger = logger.CustomLogger("AVL-Tree")
+        self.logger = logger.CustomLogger(f"AVL-Tree-{schema.table_name}-{column.name}")
 
     def clear(self):
         self.logger.info("Cleaning data, removing files")
@@ -325,8 +326,9 @@ class AVLTree:
     # --- Funciones principales ---
 
     def insert(self, record: Record, pointer: int):
-        self.logger.warning(f"INSERTING: {record.id}")
-        node = AVLNode(record.id, pointer)
+        key = record.values[record.schema.columns.index(self.column)]
+        self.logger.warning(f"INSERTING: {key}")
+        node = AVLNode(key, pointer)
         new_root = self._add_aux(node)
         if new_root != self.indexFile.get_header():
             self.indexFile.write_header(new_root)
@@ -357,6 +359,7 @@ class AVLTree:
         return r
 
     def __str__(self):
+        print(f"AVL Tree - {self.column.name}")
         print("Header:", self.indexFile.get_header())
         i = 0
         while True:
@@ -365,6 +368,6 @@ class AVLTree:
                 break
             print(f"Node {i}: val={node.val}, pointer={node.pointer}, left={node.left}, right={node.right}, height={node.height}")
             i += 1
-        print(self.getAll())
-        print([self.recordFile.read(i).id for i in self.getAll()])
+        print("Posiciones ord: ", self.getAll())
+        print("ids: ", [self.recordFile.read(i).id for i in self.getAll()])
         return "---"
