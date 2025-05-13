@@ -1,5 +1,8 @@
-from enum import Enum, auto
-from schema import DataType, IndexType, TableSchema, Column      
+import os, sys
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if root_path not in sys.path:
+    sys.path.append(root_path)
+from core.schema import DataType, IndexType, TableSchema, Column      
 
 class TableSchemaBuilder:
     def __init__(self):

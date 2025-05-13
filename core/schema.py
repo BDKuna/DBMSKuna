@@ -1,4 +1,9 @@
 from enum import Enum, auto
+import os, sys
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if root_path not in sys.path:
+    sys.path.append(root_path)
+from core.conditionschema import ConditionSchema
 
 class DataType(Enum):
     INT = auto()
@@ -25,8 +30,8 @@ class Column:
 
 class TableSchema:
     def __init__(self, table_name: str = None, columns: list[Column] = None):
-        self.table_name = table_name.lower()
-        self.columns = columns if columns else None
+        self.table_name = table_name.lower() if table_name else None
+        self.columns = columns if columns else []
 
     def get_primary_key(self):
         return next((col for col in self.columns if col.is_primary), None)
@@ -40,3 +45,10 @@ class TableSchema:
     def __repr__(self):
         # Para asegurarnos de que la serialización sea adecuada
         return f"TableSchema(table_name={self.table_name}, columns={self.columns})"
+
+class SelectSchema:
+    def __init__(self, table_name: str = None, condition: ConditionSchema = None, all : bool = None, column_list: list[str] = None):
+        self.table_name = table_name
+        self.condition = condition
+        self.all = all
+        self.column_list = column_list if column_list else []   

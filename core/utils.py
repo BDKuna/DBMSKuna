@@ -1,4 +1,7 @@
-import struct, os
+import struct, os, sys
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if root_path not in sys.path:
+    sys.path.append(root_path)
 from core.schema import DataType, Column
 
 
@@ -21,7 +24,7 @@ def pad_str(s:str, length:int):
     return s.encode().ljust(length, b'\x00')
 
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'indices', 'files')
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'tables')
 
 from enum import Enum, auto
 

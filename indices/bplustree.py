@@ -188,6 +188,10 @@ class BPlusTree:
 
 	def __init__(self, schema:TableSchema, column:Column):
 		if(column.data_type != DataType.INT):
+			print(id(DataType))
+			print(id(column.data_type.__class__))
+			print(column.data_type.__class__.__module__, column.data_type.__class__.__name__)
+			print(DataType.__module__, DataType.__name__)
 			raise Exception("column should be int, should change it")
 		self.indexFile = BPlusFile(schema, column)
 		self.recordFile = RecordFile(schema)
