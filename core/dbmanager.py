@@ -27,6 +27,8 @@ class DBManager:
                 self.error("the table must have at least 1 column")
 
             counter = Counter(column.name for column in table_schema.columns)
+            # verificar que haya exactamente un primary key, si no tirar error
+            # si no se indica, que se un hash
 
             repeats = [name for name, count in counter.items() if count > 1]
             if len(repeats) > 0:
@@ -96,9 +98,11 @@ class DBManager:
         pass
 
     def create_index(self):
+        #trae schema, cambia index y guarda schema
         pass
 
     def drop_index(self):
+        #trae schema, elimina index y guarda schema
         pass
 
 def test():
