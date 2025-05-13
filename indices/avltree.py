@@ -4,16 +4,16 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logger
-from core.record_file import RecordFile, Record
-from core.schema import TableSchema, Column, DataType, IndexType
+from core.record_file import Record
+from core.schema import TableSchema, Column, IndexType
 from core import utils
 
 
 class AVLNode:
-    FORMAT = "iiiii"
-    STRUCT = struct.Struct(FORMAT)
-    NODE_SIZE = struct.calcsize(FORMAT)
-    def __init__(self, val:int = -1, pointer:int = -1, left:int = -1, right:int = -1, height:int = 0):
+    def __init__(self, column: Column, val, pointer: int = -1, left: int = -1, right: int = -1, height: int = 0):
+        self.FORMAT = utils.calculate_column_format(column) + "iiii"
+        self.STRUCT = struct.Struct(self.FORMAT)
+        self.NODE_SIZE = struct.calcsize(self.FORMAT)
         self.val = val
         self.pointer = pointer
         self.left = left
@@ -22,28 +22,33 @@ class AVLNode:
         self.logger = logger.CustomLogger("AVL_NODE")
 
     def debug(self):
-        self.logger.debug(f"AVL Node with val: {self.val} left: {self.left}, right: {self.right}, height: {self.height}")
+        self.logger.debug(
+            f"AVL Node with val: {self.val} left: {self.left}, right: {self.right}, height: {self.height}")
 
     def pack(self) -> bytes:
         return self.STRUCT.pack(self.val, self.pointer, self.left, self.right, self.height)
 
     @staticmethod
-    def unpack(node: bytes):
+    def unpack(node: bytes, column: Column):
         if node is None:
             raise Exception("Node is None")
-        val, pointer, left, right, height = AVLNode.STRUCT.unpack(node)
-        return AVLNode(val, pointer, left, right, height)
+        format = utils.calculate_column_format(column) + "iiii"
+        val, pointer, left, right, height = struct.unpack(format,node)
+        return AVLNode(column, val, pointer, left, right, height)
+
 
 class AVLFile:
     HEADER_FORMAT = 'i'
     HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
     HEADER_STRUCT = struct.Struct(HEADER_FORMAT)
     def __init__(self, schema: TableSchema, column: Column):
+        self.column = column
         if column.index_type != IndexType.AVL:
             raise Exception("column index type doesn't match with AVL")
         self.filename = utils.get_index_file_path(schema.table_name, column.name, IndexType.AVL)
         self.logger = logger.CustomLogger(f"AVLFIlE-{schema.table_name}-{column.name}")
         self.root = -1
+        self.NODE_SIZE = struct.calcsize(utils.calculate_column_format(column) + "iiii")
         if not os.path.exists(self.filename):
             self.logger.fileNotFound(self.filename)
             open(self.filename, 'ab+').close()
@@ -62,12 +67,12 @@ class AVLFile:
 
     def read(self,pos:int) -> AVLNode | None:
         with open(self.filename, "rb") as file:
-            offset = self.HEADER_SIZE + pos * AVLNode.NODE_SIZE
+            offset = self.HEADER_SIZE + pos * self.NODE_SIZE
             file.seek(offset)
-            data = file.read(AVLNode.NODE_SIZE)
-            if not data or len(data) < AVLNode.NODE_SIZE:
+            data = file.read(self.NODE_SIZE)
+            if not data or len(data) < self.NODE_SIZE:
                 return None
-            node = AVLNode.unpack(data)
+            node = AVLNode.unpack(data, self.column)
             self.logger.readingNode(self.filename, pos)
             return node
 
@@ -77,17 +82,17 @@ class AVLFile:
             if pos == -1:
                 file.seek(0, 2)  # ir al final
                 offset = file.tell()
-                pos = (offset - self.HEADER_SIZE) // AVLNode.NODE_SIZE
+                pos = (offset - self.HEADER_SIZE) // self.NODE_SIZE
             else:
-                offset = self.HEADER_SIZE + pos * AVLNode.NODE_SIZE
+                offset = self.HEADER_SIZE + pos * self.NODE_SIZE
                 file.seek(offset)
             file.write(data)
             self.logger.writingNode(self.filename, pos, node.val, node.right, node.left, node.height)
             return pos
 
     def delete(self, pos: int):
-        node = AVLNode()
-        node.height = -1
+        node = self.read(pos)
+        node.height = -2
         self.write(node, pos)
 
     def get_header(self) -> int:
@@ -110,13 +115,10 @@ class AVLFile:
 
 class AVLTree:
     indexFile: AVLFile
-    recordFile: RecordFile
-
     def __init__(self, schema: TableSchema, column: Column):
         self.column = column
         self.indexFile = AVLFile(schema, column)
-        self.recordFile = RecordFile(schema)
-        self.NODE_SIZE = AVLNode.NODE_SIZE
+        self.NODE_SIZE = self.indexFile.NODE_SIZE
         self.logger = logger.CustomLogger(f"AVL-Tree-{schema.table_name}-{column.name}")
 
     def clear(self):
@@ -328,7 +330,7 @@ class AVLTree:
     def insert(self, record: Record, pointer: int):
         key = record.values[record.schema.columns.index(self.column)]
         self.logger.warning(f"INSERTING: {key}")
-        node = AVLNode(key, pointer)
+        node = AVLNode(self.column, key, pointer)
         new_root = self._add_aux(node)
         if new_root != self.indexFile.get_header():
             self.indexFile.write_header(new_root)
@@ -369,5 +371,4 @@ class AVLTree:
             print(f"Node {i}: val={node.val}, pointer={node.pointer}, left={node.left}, right={node.right}, height={node.height}")
             i += 1
         print("Posiciones ord: ", self.getAll())
-        print("ids: ", [self.recordFile.read(i).id for i in self.getAll()])
         return "---"
