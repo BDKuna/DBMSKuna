@@ -15,7 +15,7 @@ class TableSchemaBuilder:
         self.schema.table_name = name
         return self
 
-    def add_column(self, name: str, data_type: DataType, is_primary_key: bool, index_type: IndexType = IndexType.SEQ, varchar_length : int = -1) -> "TableSchemaBuilder":
+    def add_column(self, name: str, data_type: DataType, is_primary_key: bool, index_type: IndexType = None, varchar_length : int = -1) -> "TableSchemaBuilder":
         self.schema.columns.append(Column(name, data_type, is_primary_key, index_type, varchar_length))
         return self
 

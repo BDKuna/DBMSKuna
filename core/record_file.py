@@ -8,7 +8,6 @@ class Record:
 	def __init__(self, schema: TableSchema, values: list):
 		self.schema = schema
 		self.values = values
-		self.id = values[0]
 		self.format = utils.calculate_record_format(schema.columns)
 		self.size = struct.calcsize(self.format)
 		self.logger = logger.CustomLogger(f"RECORD-{schema.table_name}".upper())
@@ -98,7 +97,7 @@ class RecordFile:
 	# ----- Private methods -----
 
 	def _initialize_file(self):
-		with open(self.filename, "wb+") as file:
+		with open(self.filename, "rb+") as file:
 			header = file.read(self.HEADER_SIZE)
 			if not header:
 				self.logger.fileIsEmpty(self.filename)
@@ -159,7 +158,7 @@ class RecordFile:
 		del_node = self._read_node(tdel_pos) # read the node to delete
 		self._set_header(del_node.next_del) # update the header to the next free record
 		self._patch_node(tdel_pos,FreeListNode(record)) # append the new record to the deleted node
-
+		return tdel_pos
 	
 	def read(self, pos: int) -> Record:
 		"""Read a record from the file at the given position"""

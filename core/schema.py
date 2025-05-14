@@ -21,7 +21,7 @@ class IndexType(Enum):
     SEQ = auto()
 
 class Column:
-    def __init__(self, name, data_type : DataType, is_primary = False, index_type = IndexType.SEQ, varchar_length = -1):
+    def __init__(self, name, data_type : DataType, is_primary = False, index_type = None, varchar_length = -1):
         self.name = name
         self.data_type = data_type
         self.is_primary = is_primary

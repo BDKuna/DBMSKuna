@@ -6,6 +6,8 @@ if root_path not in sys.path:
 import core.utils
 from core.schema import DataType, TableSchema, IndexType, SelectSchema
 from indices.bplustree import BPlusTree
+from indices.avltree import AVLTree
+from core.record_file import Record, RecordFile
 import logger
 
 class DBManager:
@@ -32,17 +34,17 @@ class DBManager:
 
             repeats = [name for name, count in counter.items() if count > 1]
             if len(repeats) > 0:
-                self.error(f"the table can't have multiple columns with the same name (repeated names: {",".join(repeats)})")
+                self.error(f"the table can't have multiple columns with the same name (repeated names: {','.join(repeats)})")
 
             with open(f"{path}/metadata.dat", "wb") as file:
                 pickle.dump(table_schema, file)
             for column in table_schema.columns:
                 index_type = column.index_type
-
+                if index_type is None:
+                    continue
                 match index_type:
                     case IndexType.AVL:
-                        pass
-                        # AVL(table_schema, column)
+                        AVLTree(table_schema, column)
                     case IndexType.ISAM:
                         pass
                         # ISAM(table_schema, column)
@@ -75,7 +77,8 @@ class DBManager:
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
-            self.error("table doesn't exist")
+            self.logger.error("table doesn't exists")
+            #self.error("table doesn't exist")
 
     def select(self, select_schema : SelectSchema):
         table = self.get_table_schema(select_schema.table_name)
@@ -83,7 +86,7 @@ class DBManager:
             column_names = [column.name for column in table.columns]
             nonexistent = [column for column in select_schema.column_list if column not in column_names]
             if nonexistent:
-                self.error(f"some columns don't exist (nonexistent columns: {",".join(nonexistent)})")
+                self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
         
         result = self.select_condition(table, select_schema.condition)
         return result
@@ -91,8 +94,48 @@ class DBManager:
     def select_condition(self, table_schema : TableSchema, condition):
         pass
 
-    def insert(self):
-        pass
+    def getIndexes(self, tableSchema: TableSchema):
+        indexes = {}
+        for column in tableSchema.columns:
+            index_type = column.index_type
+            match index_type:
+                case IndexType.AVL:
+                    indexes[column.name] = AVLTree(tableSchema, column)
+                case IndexType.ISAM:
+                    pass
+                    # ISAM(table_schema, column)
+                case IndexType.HASH:
+                    pass
+                    # HASH(table_schema, column)
+                case IndexType.BTREE:
+                    indexes[column.name] = BPlusTree(tableSchema, column)
+                case IndexType.RTREE:
+                    pass
+                    # RTREE(table_schema, column)
+                case IndexType.SEQ:
+                    pass
+                    # SEQ(table_schema, column)
+                case None:
+                    indexes[column.name] = None
+                case _:
+                    self.error("invalid index type")
+        return indexes
+        
+
+    def insert(self, table_name:str, values: list):
+        tableSchema: TableSchema = self.get_table_schema(table_name)
+        if len(values) != len(tableSchema.columns):
+            raise Exception("El número de valores no coincide con el número de columnas")
+        record = Record(tableSchema, values)
+        record_file = RecordFile(tableSchema)
+        pos = record_file.append(record)
+
+        indexes = self.getIndexes(tableSchema)
+
+        #insertar los indices
+        for i, index in enumerate(indexes.keys()):
+            if indexes[index] is not None:
+                indexes[index].insert(pos, record.values[i])
 
     def delete(self):
         pass
@@ -110,14 +153,23 @@ def test():
     import schemabuilder
     builder = schemabuilder.TableSchemaBuilder()
     builder.set_name("productos")
-    builder.add_column("id", DataType.INT, True, IndexType.BTREE).add_column("nombre", DataType.VARCHAR, False, IndexType.HASH, 20)
+    builder.add_column("id", DataType.INT, False)
+    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.AVL, varchar_length=20)
     schema = builder.get()
     dbmanager.drop_table("productos")
     dbmanager.create_table(schema)
     read_schema = dbmanager.get_table_schema("productos")
-    print(read_schema.table_name)
-    for i in read_schema.columns:
-        print(f"{i.data_type}, {i.index_type}, {i.is_primary}, {i.name}")
+
+    dbmanager.insert(read_schema.table_name, [4, "Eduardo"])
+    dbmanager.insert(read_schema.table_name, [5, "Paca"])
+    dbmanager.insert(read_schema.table_name, [6, "Sergod"])
+    dbmanager.insert(read_schema.table_name, [6, "Sergod2"])
+    dbmanager.insert(read_schema.table_name, [6, "Buenas tardes"])
+    dbmanager.insert(read_schema.table_name, [6, "Hola"])
+    indexes = dbmanager.getIndexes(schema)
+    for index in indexes.keys():
+        if indexes[index] is not None:
+            print(indexes[index])
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logger
-from core.schema import TableSchema, Column, IndexType
+from core.schema import TableSchema, Column, IndexType, DataType
 from core import utils
 
 
@@ -18,6 +18,7 @@ class AVLNode:
         self.left = left
         self.right = right
         self.height = height
+        self.column = column
         self.logger = logger.CustomLogger("AVL_NODE")
 
     def debug(self):
@@ -25,14 +26,16 @@ class AVLNode:
             f"AVL Node with val: {self.val} left: {self.left}, right: {self.right}, height: {self.height}")
 
     def pack(self) -> bytes:
-        return self.STRUCT.pack(self.val, self.pointer, self.left, self.right, self.height)
+        return self.STRUCT.pack(self.val.encode() if self.column.data_type == DataType.VARCHAR else self.val, self.pointer, self.left, self.right, self.height)
 
     @staticmethod
     def unpack(node: bytes, column: Column):
         if node is None:
             raise Exception("Node is None")
         format = utils.calculate_column_format(column) + "iiii"
-        val, pointer, left, right, height = struct.unpack(format,node)
+        val, pointer, left, right, height = struct.unpack(format, node)
+        if column.data_type == DataType.VARCHAR:
+            val = val.decode().strip("\x00")
         return AVLNode(column, val, pointer, left, right, height)
 
 
