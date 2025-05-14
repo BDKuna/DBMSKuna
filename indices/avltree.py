@@ -4,7 +4,6 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logger
-from core.record_file import Record
 from core.schema import TableSchema, Column, IndexType
 from core import utils
 
@@ -260,7 +259,7 @@ class AVLTree:
 
         return self._balance(point, pos)
 
-    def _range_search_aux(self, r: list[int], i:int, j:int, pos:int = -2):
+    def _range_search_aux(self, r: list[int], i, j, pos:int = -2):
         if pos == -2:
             pos = self.indexFile.get_header()
         if pos == -1:  # no hay ningun registro
@@ -326,34 +325,34 @@ class AVLTree:
         return self._balance(node, pos)
 
     # --- Funciones principales ---
-
-    def insert(self, record: Record, pointer: int):
-        key = record.values[record.schema.columns.index(self.column)]
+    
+    def insert(self, pointer: int, key):
         self.logger.warning(f"INSERTING: {key}")
         node = AVLNode(self.column, key, pointer)
         new_root = self._add_aux(node)
         if new_root != self.indexFile.get_header():
             self.indexFile.write_header(new_root)
 
-    def delete(self,  key:int):
+    def delete(self,  key):
         self.logger.warning(f"DELETING: {key}")
         new_root = self._aux_delete(key)
         if new_root != self.indexFile.get_header():
             self.indexFile.write_header(new_root)
 
-    def rangeSearch(self, i:int, j:int) -> list[int]:
+    def rangeSearch(self, i, j) -> list[int]:
         r = []
         self._range_search_aux(r, i, j)
         return r
 
-    def search(self, key:int) -> int:
+    # list enteros que son posiciones
+    def search(self, key) -> list[int]:
         self.logger.warning(f"SEARCHING: {key}")
         pos = self._seek(key)
         if pos == -1:
             self.logger.warning("The id is not on the tree")
             return -1
         record_pos = self.indexFile.read(pos).pointer
-        return record_pos
+        return self.rangeSearch(key, key)
 
     def getAll(self) -> list[int]:
         r = []
