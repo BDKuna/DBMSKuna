@@ -1,5 +1,8 @@
-from enum import Enum, auto
-from schema import DataType, IndexType, TableSchema, Column      
+import os, sys
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if root_path not in sys.path:
+    sys.path.append(root_path)
+from core.schema import DataType, IndexType, TableSchema, Column      
 
 class TableSchemaBuilder:
     def __init__(self):
@@ -12,7 +15,7 @@ class TableSchemaBuilder:
         self.schema.table_name = name
         return self
 
-    def add_column(self, name: str, data_type: DataType, is_primary_key: bool, index_type: IndexType = IndexType.SEQ, varchar_length : int = -1) -> "TableSchemaBuilder":
+    def add_column(self, name: str, data_type: DataType, is_primary_key: bool, index_type: IndexType = None, varchar_length : int = -1) -> "TableSchemaBuilder":
         self.schema.columns.append(Column(name, data_type, is_primary_key, index_type, varchar_length))
         return self
 

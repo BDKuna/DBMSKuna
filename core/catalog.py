@@ -1,6 +1,6 @@
 from schema import TableSchema
 import pickle, os
-
+"""
 class Catalog:
     def __init__(self, file_path="catalog.dat"):
         self.tables = {}
@@ -18,15 +18,15 @@ class Catalog:
         return list(self.tables.keys())
 
     def save_catalog(self):
-        """Serializa el catálogo de tablas a un archivo."""
+        #Serializa el catálogo de tablas a un archivo.
         with open(self.file_path, "wb") as file:
             pickle.dump(self.tables, file)
 
     def load_catalog(self):
-        """Carga el catálogo desde un archivo serializado."""
+        #Carga el catálogo desde un archivo serializado.
         if os.path.exists(self.file_path):
             with open(self.file_path, "rb") as file:
                 self.tables = pickle.load(file)
         else:
             self.tables = {}
-
+"""

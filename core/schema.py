@@ -1,4 +1,10 @@
 from enum import Enum, auto
+import os, sys
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if root_path not in sys.path:
+    sys.path.append(root_path)
+from core.conditionschema import ConditionSchema
+
 
 class DataType(Enum):
     INT = auto()
@@ -16,7 +22,7 @@ class IndexType(Enum):
     SEQ = auto()
 
 class Column:
-    def __init__(self, name, data_type : DataType, is_primary = False, index_type = IndexType.SEQ, varchar_length = -1):
+    def __init__(self, name, data_type : DataType, is_primary = False, index_type = None, varchar_length = -1):
         self.name = name
         self.data_type = data_type
         self.is_primary = is_primary
@@ -25,8 +31,8 @@ class Column:
 
 class TableSchema:
     def __init__(self, table_name: str = None, columns: list[Column] = None):
-        self.table_name = table_name.lower()
-        self.columns = columns if columns else None
+        self.table_name = table_name.lower() if table_name else None
+        self.columns = columns if columns else []
 
     def get_primary_key(self):
         return next((col for col in self.columns if col.is_primary), None)
@@ -36,7 +42,57 @@ class TableSchema:
 
     def get_column_by_name(self, name: str):
         return next((col for col in self.columns if col.name == name), None)
+    
+    def get_indexes(self):
+        indexes = {}
+        for column in self.columns:
+            indexes[column.name] = self.get_column_index_type(column)
+        return indexes
+
+    def get_column_index_type(self, column: Column):
+        index_type = column.index_type
+        match index_type:
+            case IndexType.AVL:
+                from indices.avltree import AVLTree
+                return AVLTree(self, column)
+            case IndexType.ISAM:
+                pass
+                # ISAM(table_schema, column)
+            case IndexType.HASH:
+                pass
+                # HASH(table_schema, column)
+            case IndexType.BTREE:
+                from indices.bplustree import BPlusTree
+                return BPlusTree(self, column)
+            case IndexType.RTREE:
+                pass
+                # RTREE(table_schema, column)
+            case IndexType.SEQ:
+                pass
+                # SEQ(table_schema, column)
+            case None:
+                None
+            case _:
+                self.error("invalid index type")
+
+    def get_primary_index(self):
+        column = self.get_primary_key()
+        return self.get_column_index_type(column)
+        
+    def get_primary_key(self) -> Column:
+        for column in self.columns:
+            if column.is_primary:
+                return column
+        self.error("No primary key")
+
 
     def __repr__(self):
         # Para asegurarnos de que la serialización sea adecuada
         return f"TableSchema(table_name={self.table_name}, columns={self.columns})"
+
+class SelectSchema:
+    def __init__(self, table_name: str = None, condition: ConditionSchema = None, all : bool = None, column_list: list[str] = None):
+        self.table_name = table_name
+        self.condition = condition
+        self.all = all
+        self.column_list = column_list if column_list else []   

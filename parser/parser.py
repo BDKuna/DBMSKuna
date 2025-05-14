@@ -1,57 +1,13 @@
-from scanner import Token, Scanner
+import os, sys
 from enum import Enum, auto
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if root_path not in sys.path:
+    sys.path.append(root_path)
+from scanner import Token, Scanner
 from core.schemabuilder import TableSchemaBuilder
+from core.conditionschema import BinaryOp, Condition, ConditionColumn, ConditionValue, NotCondition, BinaryCondition, BetweenCondition, BooleanColumn
 from core.schema import TableSchema, DataType, IndexType
 from core.dbmanager import DBManager
-import sys
-
-class BinaryOp(Enum):
-    AND = auto()
-    OR = auto()
-    EQ = auto()
-    NEQ = auto()
-    LT = auto()
-    GT = auto()
-    LE = auto()
-    GE = auto()
-
-class Condition:
-    def __init__(self):
-        pass
-
-class BinaryCondition(Condition):
-    def __init__(self, left : Condition = None, op : BinaryOp = None, right : Condition = None):
-        super().__init__()
-        self.left = left
-        self.op = op
-        self.right = right
-
-class BetweenCondition(Condition):
-    def __init__(self, left : Condition = None, mid : Condition = None, right : Condition = None):
-        super().__init__()
-        self.left = left
-        self.mid = mid
-        self.right = right
-
-class NotCondition(Condition):
-    def __init__(self, condition : Condition = None):
-        super().__init__()
-        self.condition = condition
-
-class BooleanColumn(Condition):
-    def __init__(self, column_name : str = None):
-        super().__init__()
-        self.column_name = column_name
-
-class ConditionColumn(Condition):
-    def __init__(self, column_name : str = None):
-        super().__init__()
-        self.column_name = column_name
-
-class ConditionValue(Condition):
-    def __init__(self, value = None):
-        super().__init__()
-        self.value = value
 
 class Stmt:
     def __init__(self):
@@ -785,7 +741,7 @@ class Printer:
         self.indent -= 2
 
 
-class InterpretError(Exception):
+class RuntimeError(Exception):
     def __init__(self, error : str):
         self.error = f"Runtime error: {error}"
         super().__init__(self.error)
@@ -793,15 +749,15 @@ class InterpretError(Exception):
 
 class Interpreter:
     def __init__(self):
-        pass
+        self.dbmanager = DBManager()
 
     def error(self, error : str):
-        raise InterpretError(error)
+        raise RuntimeError(error)
     
     def interpret(self, sql : SQL):
         try:
             self.interpret_sql(sql)
-        except InterpretError as e:
+        except RuntimeError as e:
             print(e.error)
 
     def interpret_sql(self, sql : SQL):
@@ -829,10 +785,10 @@ class Interpreter:
         else:
             self.error("unknown statement type")
 
-    def interpret_select_stmt(stmt : SelectStmt):
+    def interpret_select_stmt(self, stmt : SelectStmt):
         pass
 
-    def interpret_create_table_stmt(stmt):
+    def interpret_create_table_stmt(self, stmt : CreateTableStmt):
         pass
 
 if __name__ == "__main__":
@@ -845,6 +801,6 @@ if __name__ == "__main__":
     sql = parser.parse()
     printer = Printer()
     printer.print(sql)
-    interpreter = Interpreter()
-    interpreter.interpret(sql)
+    # interpreter = Interpreter()
+    # interpreter.interpret(sql)
 
