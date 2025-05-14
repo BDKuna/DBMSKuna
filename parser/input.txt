@@ -4,7 +4,7 @@ CREATE TABLE ventas (
     cantidad INT,
     precio FLOAT,
     fecha DATE INDEX RTREE,
-    cliente_id INT
+    cliente_id INT INDEX AVL
 );
 
 INSERT INTO ventas VALUES (1, 'Notebook', 2, 1200.50, '2023-11-15', 45);

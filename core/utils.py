@@ -20,6 +20,18 @@ def calculate_record_format(columns: list[Column]):
             raise NotImplementedError(f"Unsupported type {col.data_type}")
     return fmt
 
+def calculate_column_format(column: Column):
+    if column.data_type == DataType.INT:
+        return "i"
+    elif column.data_type == DataType.FLOAT:
+        return "f"
+    elif column.data_type == DataType.VARCHAR:
+        return f"{column.varchar_length}s"
+    elif column.data_type == DataType.BOOL:
+        return "?"
+    else:
+        raise NotImplementedError(f"Unsupported type {column.data_type}")
+
 def pad_str(s:str, length:int):
     return s.encode().ljust(length, b'\x00')
 
