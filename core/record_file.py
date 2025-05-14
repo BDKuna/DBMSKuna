@@ -8,6 +8,7 @@ class Record:
 	def __init__(self, schema: TableSchema, values: list):
 		self.schema = schema
 		self.values = values
+		self.id = values[0] # no deberia estar esto
 		self.format = utils.calculate_record_format(schema.columns)
 		self.size = struct.calcsize(self.format)
 		self.logger = logger.CustomLogger(f"RECORD-{schema.table_name}".upper())
@@ -19,8 +20,6 @@ class Record:
 		]
 		debug_msg = f"Record [{', '.join(attrs)}]"
 		self.logger.debug(debug_msg)
-
-
 
 	def pack(self):
 		packed = []

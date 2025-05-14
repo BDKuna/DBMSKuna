@@ -4,7 +4,7 @@ root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
 import core.utils
-from core.schema import DataType, TableSchema, IndexType, SelectSchema
+from core.schema import DataType, TableSchema, IndexType, SelectSchema, Column
 from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from core.record_file import Record, RecordFile
@@ -94,34 +94,6 @@ class DBManager:
     def select_condition(self, table_schema : TableSchema, condition):
         pass
 
-    def getIndexes(self, tableSchema: TableSchema):
-        indexes = {}
-        for column in tableSchema.columns:
-            index_type = column.index_type
-            match index_type:
-                case IndexType.AVL:
-                    indexes[column.name] = AVLTree(tableSchema, column)
-                case IndexType.ISAM:
-                    pass
-                    # ISAM(table_schema, column)
-                case IndexType.HASH:
-                    pass
-                    # HASH(table_schema, column)
-                case IndexType.BTREE:
-                    indexes[column.name] = BPlusTree(tableSchema, column)
-                case IndexType.RTREE:
-                    pass
-                    # RTREE(table_schema, column)
-                case IndexType.SEQ:
-                    pass
-                    # SEQ(table_schema, column)
-                case None:
-                    indexes[column.name] = None
-                case _:
-                    self.error("invalid index type")
-        return indexes
-        
-
     def insert(self, table_name:str, values: list):
         tableSchema: TableSchema = self.get_table_schema(table_name)
         if len(values) != len(tableSchema.columns):
@@ -130,13 +102,19 @@ class DBManager:
         record_file = RecordFile(tableSchema)
         pos = record_file.append(record)
 
-        indexes = self.getIndexes(tableSchema)
+        indexes = tableSchema.get_indexes()
 
         #insertar los indices
         for i, index in enumerate(indexes.keys()):
             if indexes[index] is not None:
                 indexes[index].insert(pos, record.values[i])
 
+    def selectAll(self, table_name:str):
+        tableSchema: TableSchema = self.get_table_schema(table_name)
+        primaryIndex = tableSchema.get_primary_index()
+        record_file = RecordFile(tableSchema)
+        return [record_file.read(pos) for pos in primaryIndex.getAll()]
+    
     def delete(self):
         pass
 
@@ -148,6 +126,7 @@ class DBManager:
         #trae schema, elimina index y guarda schema
         pass
 
+
 def test():
     dbmanager = DBManager()
     import schemabuilder
@@ -155,7 +134,7 @@ def test():
     builder.set_name("productos")
     builder.add_column("id", DataType.INT, False)
     builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.AVL, varchar_length=20)
-    schema = builder.get()
+    schema:TableSchema = builder.get()
     dbmanager.drop_table("productos")
     dbmanager.create_table(schema)
     read_schema = dbmanager.get_table_schema("productos")
@@ -166,10 +145,13 @@ def test():
     dbmanager.insert(read_schema.table_name, [6, "Sergod2"])
     dbmanager.insert(read_schema.table_name, [6, "Buenas tardes"])
     dbmanager.insert(read_schema.table_name, [6, "Hola"])
-    indexes = dbmanager.getIndexes(schema)
+    indexes = schema.get_indexes()
     for index in indexes.keys():
         if indexes[index] is not None:
             print(indexes[index])
+
+    for i in dbmanager.selectAll(schema.table_name):
+        print(i)
 
 
 if __name__ == "__main__":
