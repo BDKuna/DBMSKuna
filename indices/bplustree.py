@@ -25,7 +25,7 @@ class NodeBPlus:
 		while len(keys) < self.BLOCK_FACTOR:
 			keys.append(empty_key)
 		while len(pointers) < self.BLOCK_FACTOR + 1:
-				pointers.append(-1)
+			pointers.append(-1)
 		
 		self.keys = keys
 		self.pointers = pointers
@@ -157,6 +157,8 @@ class BPlusFile:
 			file.write(struct.pack("i", header))
 	
 	def readBucket(self, pos: int) -> NodeBPlus:
+		if(pos == -1):
+			raise Exception(f"Error reading bucket at pos {pos}")
 		with open(self.filename, "rb") as file:
 			offset = self.HEADER_SIZE + pos * self.NODE_SIZE
 			file.seek(offset)
@@ -202,6 +204,7 @@ class BPlusTree:
 
 	def __init__(self, schema:TableSchema, column:Column):
 		self.column = column
+		self.empty_key = utils.get_empty_value(self.column)
 		if column.index_type != IndexType.BTREE:
 			raise Exception("column index type doesn't match with BTREE")
 		self.indexFile = BPlusFile(schema, column)
@@ -247,7 +250,7 @@ class BPlusTree:
 			if(not node.isFull()):
 				self.indexFile.writeBucket(nodePos, node)
 				self.logger.info(f"node leaf with keys: {node.keys} is not full, not splitting")
-				return False, -1, -1
+				return False, self.empty_key, -1
 			
 			self.logger.info(f"node leaf is full, splitting node with keys: {node.keys}")
 			mid = node.size // 2
@@ -268,14 +271,14 @@ class BPlusTree:
 			split, newKey, newPointer = self.insertAux(node.pointers[ite], key, pointer)
 
 			if not split:
-				return False, -1, -1
+				return False, self.empty_key, -1
 			
 			node.insertInInternalNode(newKey, newPointer)
 
 			if not node.isFull():
 				self.indexFile.writeBucket(nodePos, node)
 				self.logger.info(f"node intern with keys: {node.keys} is not full, not splitting")
-				return False, -1, -1
+				return False, self.empty_key, -1
 			
 			self.logger.info(f"node intern is full, splitting node with keys: {node.keys}")
 			mid = node.size // 2
@@ -344,7 +347,8 @@ class BPlusTree:
 		leafNode = self.indexFile.readBucket(leafPos)
 		while(ite < leafNode.size and leafNode.keys[ite] < ini):
 			ite += 1
-		if(ite == leafNode.size):
+
+		if(leafNode.nextNode != -1 and ite == leafNode.size):
 			leafNode = self.indexFile.readBucket(leafNode.nextNode)
 			ite = 0
 			
@@ -352,6 +356,8 @@ class BPlusTree:
 			result.append(leafNode.pointers[ite])
 			ite += 1
 			if(ite == leafNode.size):
+				if(leafNode.nextNode == -1):
+					break
 				leafNode = self.indexFile.readBucket(leafNode.nextNode)
 				ite = 0
 		return result
@@ -404,7 +410,7 @@ class BPlusTree:
 				print(f"Level {currentLevel}: ", end="")
 
 			# mostrar el bucket
-			keys = [k for k in node.keys if k != -1]
+			keys = [k for k in node.keys if k != self.empty_key]
 			print(f" {keys}", end="  ")
 
 			# meter hijos a la cola
