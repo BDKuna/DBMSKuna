@@ -6,15 +6,16 @@ import logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import logger
-from core.record_file import RecordFile, Record
+from core.record_file import Record
 from core.schema import TableSchema, Column, DataType, IndexType
 from core import utils
 
 class NodeBPlus:
 	BLOCK_FACTOR = 3
-	FORMAT = "i" * BLOCK_FACTOR + "i" * (BLOCK_FACTOR + 1) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
-	NODE_SIZE = struct.calcsize(FORMAT)
-	def __init__(self, keys:list = [], pointers:list = [], isLeaf:bool = False, size:int = 0, nextNode:int = -1):
+	def __init__(self, column: Column, keys:list = [], pointers:list = [], isLeaf:bool = False, size:int = 0, nextNode:int = -1):
+		self.column = column
+		self.FORMAT = utils.calculate_column_format(column) * self.BLOCK_FACTOR + "i" * (self.BLOCK_FACTOR + 1) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
+		self.NODE_SIZE = struct.calcsize(self.FORMAT)
 		if isLeaf:
 			if len(pointers) != len(keys):
 				raise Exception("Creating leaf node, number of keys and pointers must be equal")
@@ -22,8 +23,9 @@ class NodeBPlus:
 			if len(pointers) != len(keys) + 1:
 				raise Exception("Creating internal node, number of pointers must be one more than number of keys")
 		
+		empty_key = utils.get_empty_value(self.column)
 		while len(keys) < self.BLOCK_FACTOR:
-			keys.append(-1)
+			keys.append(empty_key)
 		while len(pointers) < self.BLOCK_FACTOR + 1:
 				pointers.append(-1)
 		
@@ -34,7 +36,7 @@ class NodeBPlus:
 		self.nextNode = nextNode
 		self.logger = logger.CustomLogger("NODEBPLUS")
 	
-	def addLeafId(self, key:int, pointer:int):
+	def addLeafId(self, key:any, pointer:int):
 		self.logger.debug(f"Adding id: {key} and pointer: {pointer} in bucket")
 		#if len(self.pointers) != len(self.keys):
 		#	raise Exception("In leaf node, number of keys and pointers must be equal")
@@ -46,7 +48,7 @@ class NodeBPlus:
 		else:
 			raise Exception("Node is full")
 	
-	def addInternalId(self, key:int, pointer:int):
+	def addInternalId(self, key:any, pointer:int):
 		self.logger.debug(f"Adding id: {key} and pointer: {pointer} in bucket")
 		if len(self.pointers) != len(self.keys) + 1:
 			raise Exception("In intern node, number of keys and pointers must be differ in 1")
@@ -58,7 +60,7 @@ class NodeBPlus:
 		else:
 			raise Exception("Node is full")
 	
-	def insertInLeaf(self, key: int, pointer: int):
+	def insertInLeaf(self, key: any, pointer: int):
 		assert(self.isLeaf)
 		self.logger.debug(f"Inserting in leaf: key={key}, pointer={pointer}")
 		self.addLeafId(key, pointer)
@@ -69,7 +71,7 @@ class NodeBPlus:
 			self.pointers[i], self.pointers[i - 1] = self.pointers[i - 1], self.pointers[i]
 			i -= 1
 
-	def insertInInternalNode(self, key: int, rightChildPtr: int):
+	def insertInInternalNode(self, key: any, rightChildPtr: int):
 		assert(not self.isLeaf)
 		self.logger.debug(f"Inserting in internal self: key={key}, rightPtr={rightChildPtr}")
 		self.addInternalId(key, rightChildPtr)
@@ -85,8 +87,10 @@ class NodeBPlus:
 
 	def pack(self) -> bytes:
 		data_buf = b''
+		type = utils.calculate_column_format(self.column)
 		for key in self.keys:
-			data_buf += struct.pack('i', key)
+			print(key)
+			data_buf += struct.pack(type, key.encode() if self.column.data_type == DataType.VARCHAR else key)
 		for pointer in self.pointers:
 			data_buf += struct.pack('i', pointer)
 		data_buf += struct.pack('iii', self.isLeaf, self.size, self.nextNode)
@@ -96,31 +100,49 @@ class NodeBPlus:
 		self.logger.debug(f"Node with keys: {self.keys}, pointers: {self.pointers}, isLeaf: {self.isLeaf}, size: {self.size}, nextNode: {self.nextNode}")
 
 	@staticmethod
-	def unpack(record:bytes):
+	def unpack(record:bytes, column: Column):
 		if(record == None):
 			raise Exception("record is None")
 		isLeaf, size, nextNode = struct.unpack('iii', record[-12:])
 
 		blockFactor = NodeBPlus.BLOCK_FACTOR
-		keys = [-1 for _ in range(size)]
-		pointers = [-1 for _ in range(size + 1 - isLeaf)]
-		for i in range(size):
-			keys[i] = struct.unpack('i',record[4*i : 4*(i+1)])[0]
-		for i in range(size + 1 - isLeaf):
-			pointers[i] = struct.unpack('i',record[4*blockFactor + 4*i : 4*blockFactor + 4*(i+1)])[0]
 		
-		node = NodeBPlus(keys, pointers, isLeaf, size, nextNode)
-		return node
+		key_fmt = utils.calculate_column_format(column)
+		key_size = struct.calcsize(key_fmt)
+
+		keys = []
+		pointers = []
+
+		for i in range(size):
+			start = i * key_size
+			end = start + key_size
+			val = struct.unpack(key_fmt, record[start:end])[0]
+			if column.data_type == DataType.VARCHAR:
+				val = val.decode().strip("\x00")
+			keys.append(val)
+
+		ptr_start = blockFactor * key_size
+		
+		for i in range(size + 1 - isLeaf):
+			start = ptr_start + i * 4
+			end = start + 4
+			ptr = struct.unpack('i', record[start:end])[0]
+			pointers.append(ptr)
+
+		return NodeBPlus(column, keys, pointers, isLeaf, size, nextNode)
 
 class BPlusFile:
 	HEADER_SIZE = 4
 
 	def __init__(self, schema:TableSchema, column:Column):
+		self.column = column
 		if(column.index_type != IndexType.BTREE):
 			raise Exception("column index type doesn't match with BTREE")
-		self.filename = utils.get_index_file_path(schema.table_name, column.name, column.index_type)
+		self.filename = utils.get_index_file_path(schema.table_name, column.name, IndexType.BTREE)
 		self.logger = logger.CustomLogger(f"BPLUSFILE-{schema.table_name}-{column.name}".upper())
-		self.logger.logger.setLevel(logging.WARNING)
+		
+		self.NODE_SIZE = struct.calcsize(utils.calculate_column_format(column) * NodeBPlus.BLOCK_FACTOR + "i" * (NodeBPlus.BLOCK_FACTOR + 1) + "iii")
+		#self.logger.logger.setLevel(logging.WARNING)
 
 		if not os.path.exists(self.filename):
 			self.logger.fileNotFound(self.filename)
@@ -139,13 +161,13 @@ class BPlusFile:
 	
 	def readBucket(self, pos: int) -> NodeBPlus:
 		with open(self.filename, "rb") as file:
-			offset = self.HEADER_SIZE + pos * NodeBPlus.NODE_SIZE
+			offset = self.HEADER_SIZE + pos * self.NODE_SIZE
 			file.seek(offset)
-			data = file.read(NodeBPlus.NODE_SIZE)
-			if not data or len(data) < NodeBPlus.NODE_SIZE:
+			data = file.read(self.NODE_SIZE)
+			if not data or len(data) < self.NODE_SIZE:
 				self.logger.invalidPosition(self.filename, pos)
 				raise Exception(f"Invalid bucket position: {pos}")
-			node = NodeBPlus.unpack(data)
+			node = NodeBPlus.unpack(data, self.column)
 			self.logger.readingBucket(self.filename, pos, node.keys)
 			return node
 
@@ -155,17 +177,13 @@ class BPlusFile:
 			if pos == -1:
 				file.seek(0, 2)  # ir al final
 				offset = file.tell()
-				pos = (offset - self.HEADER_SIZE) // NodeBPlus.NODE_SIZE
+				pos = (offset - self.HEADER_SIZE) // self.NODE_SIZE
 			else:
-				offset = self.HEADER_SIZE + pos * NodeBPlus.NODE_SIZE
+				offset = self.HEADER_SIZE + pos * self.NODE_SIZE
 				file.seek(offset)
 			file.write(data)
 			self.logger.writingBucket(self.filename, pos, node.keys)
 			return pos		
-		
-	def freeBucket(self, pos: int):
-		node = NodeBPlus()
-		self.writeBucket(pos, node)
 
 	def getHeader(self) -> int:
 		with open(self.filename, "rb") as file:
@@ -184,41 +202,37 @@ class BPlusFile:
 
 class BPlusTree:
 	indexFile: BPlusFile
-	recordFile: RecordFile
 
 	def __init__(self, schema:TableSchema, column:Column):
-		if(column.data_type != DataType.INT):
-			print(id(DataType))
-			print(id(column.data_type.__class__))
-			print(column.data_type.__class__.__module__, column.data_type.__class__.__name__)
-			print(DataType.__module__, DataType.__name__)
-			raise Exception("column should be int, should change it")
+		self.column = column
+		if column.index_type != IndexType.BTREE:
+			raise Exception("column index type doesn't match with BTREE")
 		self.indexFile = BPlusFile(schema, column)
-		self.recordFile = RecordFile(schema)
 		self.BLOCK_FACTOR = NodeBPlus.BLOCK_FACTOR
 		self.logger = logger.CustomLogger(f"BPLUSTREE-{schema.table_name}-{column.name}".upper())
 	
 	def insert(self, pos:int, val:any):
-		self.logger.info(f"INSERT record with id: {record.id}")
+		self.logger.info(f"INSERT record with id: {val}")
 
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
-			self.logger.info(f"Creating new root, first record with id: {record.id}")
-			root = NodeBPlus(isLeaf=True)
-			root.addLeafId(record.id, pos)
+			self.logger.info(f"Creating new root, first record with id: {val}")
+			root = NodeBPlus(column=self.column, isLeaf=True)
+			root.addLeafId(val, pos)
 			rootPos = self.indexFile.writeBucket(-1, root) # new bucket
 			self.indexFile.writeHeader(rootPos)
 			return
 		
-		split, newKey, newPointer = self.insertAux(rootPos, record.id, pos)
+		split, newKey, newPointer = self.insertAux(rootPos, val, pos)
 
 		if not split:
-			self.logger.successfulInsertion(self.indexFile.filename, record.id)
+			self.logger.successfulInsertion(self.indexFile.filename, val)
 			return
 		
 		# ¡SI HAY SPLIT, CREAMOS NUEVA RAIZ DIRECTAMENTE!
 		self.logger.info(f"Root was split, Creating new root")
 		newRoot = NodeBPlus(
+			self.column,
 			keys=[newKey],
 			pointers=[rootPos, newPointer],
 			isLeaf=False,
@@ -227,9 +241,9 @@ class BPlusTree:
 		newRootPos = self.indexFile.writeBucket(-1, newRoot)
 		self.indexFile.writeHeader(newRootPos)
 		self.logger.info(f"New root created with keys: {newRoot.keys}")
-		self.logger.successfulInsertion(self.indexFile.filename, record.id)
+		self.logger.successfulInsertion(self.indexFile.filename, val)
 	
-	def insertAux(self, nodePos:int, key:int, pointer:int) -> tuple[bool, int, int]: # split?, key, pointer
+	def insertAux(self, nodePos:int, key:any, pointer:int) -> tuple[bool, any, int]: # split?, key, pointer
 		node:NodeBPlus = self.indexFile.readBucket(nodePos)
 		if(node.isLeaf): # if is leaf, insert
 			node.insertInLeaf(key, pointer)
@@ -242,9 +256,9 @@ class BPlusTree:
 			mid = node.size // 2
 			leftKeys, rightKeys = node.keys[:mid], node.keys[mid:]
 			leftPointers, rightPointers = node.pointers[:mid], node.pointers[mid:-1]
-			newNode = NodeBPlus(rightKeys, rightPointers, True, len(rightKeys), node.nextNode)
+			newNode = NodeBPlus(self.column, rightKeys, rightPointers, True, len(rightKeys), node.nextNode)
 			pos = self.indexFile.writeBucket(-1, newNode)
-			node = NodeBPlus(leftKeys, leftPointers, True, len(leftKeys), pos)
+			node = NodeBPlus(self.column, leftKeys, leftPointers, True, len(leftKeys), pos)
 			self.indexFile.writeBucket(nodePos, node)
 			self.logger.info(f"node leaf spplitted into left node with keys: {node.keys} and right node with keys: {newNode.keys}")
 
@@ -272,9 +286,9 @@ class BPlusTree:
 			upKey = node.keys[mid]
 			leftPointers, rightPointers = node.pointers[:mid+1], node.pointers[mid+1:] # pointers split but maintain for them
 			
-			newNode = NodeBPlus(rightKeys, rightPointers, False, len(rightKeys), -1) # no next node
+			newNode = NodeBPlus(self.column, rightKeys, rightPointers, False, len(rightKeys), -1) # no next node
 			upPointer = self.indexFile.writeBucket(-1, newNode)
-			node = NodeBPlus(leftKeys, leftPointers, False, len(leftKeys), -1)
+			node = NodeBPlus(self.column, leftKeys, leftPointers, False, len(leftKeys), -1)
 			self.indexFile.writeBucket(nodePos, node)
 			self.logger.info(f"node intern spplitted into left node with keys: {node.keys} and right node with keys: {newNode.keys}")
 
@@ -292,24 +306,22 @@ class BPlusTree:
 			firstPos = node.pointers[0]
 			node = self.indexFile.readBucket(firstPos)
 		
-		records:list[Record] = []
-		ids:list[int] = []
+		pointers: list[int] = []
 		while(True):
 			assert(node.isLeaf)
 			for i in range(node.size):
-				records.append(self.recordFile.read(node.pointers[i]))
-				ids.append(records[-1].id)
+				pointers.append(node.pointers[i])
 			if(node.nextNode == -1): break
 			node = self.indexFile.readBucket(node.nextNode)
 
-		self.logger.info(f"Successful operation, found records with ids: {ids}")
-		return ids
+		self.logger.info(f"Successful operation, found records with ids: {pointers}")
+		return pointers
 	
-	def search(self, id:int) -> Record | None:
+	def search(self, id:int) -> int | None:
 		self.logger.info(f"SEARCH record with id: {id}")
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
-			self.logger.fileIsEmpty(self.recordFile.filename)
+			self.logger.fileIsEmpty(self.indexFile.filename)
 			self.logger.info(f"NOT FOUND record with id: {id}")
 			return None
 		
@@ -321,14 +333,14 @@ class BPlusTree:
 			self.logger.info(f"NOT FOUND record with id: {id}")
 		return record
 	
-	def searchAux(self, nodePos:int, key:int) -> Record | None:
+	def searchAux(self, nodePos:int, key:int) -> int | None:
 		node:NodeBPlus = self.indexFile.readBucket(nodePos)
 		if(node.isLeaf):
 			self.logger.info(f"Searching in leaf: key={key}")
 			for i in range(node.size):
 				if(node.keys[i] == key):
 					self.logger.info(f"Record with key={key} was found on leaf")
-					return self.recordFile.read(node.pointers[i])
+					return node.pointers[i]
 			self.logger.info(f"Record with key={key} was not found on leaf")
 			return None
 
@@ -343,7 +355,6 @@ class BPlusTree:
 	def clear(self):
 		self.logger.info("Cleaning data, removing files")
 		os.remove(self.indexFile.filename)
-		os.remove(self.recordFile.filename)
 
 	def printBuckets(self):
 		rootPos = self.indexFile.getHeader()
@@ -373,4 +384,3 @@ class BPlusTree:
 				for ptr in node.pointers[:node.size+1]:
 					if ptr != -1:
 						queue.append((ptr, level + 1))
-		print()

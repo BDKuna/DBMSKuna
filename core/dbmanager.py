@@ -132,8 +132,8 @@ def test():
     import schemabuilder
     builder = schemabuilder.TableSchemaBuilder()
     builder.set_name("productos")
-    builder.add_column("id", DataType.INT, False)
-    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.AVL, varchar_length=20)
+    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=False)
+    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.BTREE, varchar_length=20)
     schema:TableSchema = builder.get()
     dbmanager.drop_table("productos")
     dbmanager.create_table(schema)
@@ -142,9 +142,13 @@ def test():
     dbmanager.insert(read_schema.table_name, [4, "Eduardo"])
     dbmanager.insert(read_schema.table_name, [5, "Paca"])
     dbmanager.insert(read_schema.table_name, [6, "Sergod"])
-    dbmanager.insert(read_schema.table_name, [6, "Sergod2"])
-    dbmanager.insert(read_schema.table_name, [6, "Buenas tardes"])
-    dbmanager.insert(read_schema.table_name, [6, "Hola"])
+    dbmanager.insert(read_schema.table_name, [9, "Sergod2"])
+    dbmanager.insert(read_schema.table_name, [5, "Sergod3"])
+    dbmanager.insert(read_schema.table_name, [4, "Sergod4"])
+    dbmanager.insert(read_schema.table_name, [2, "Sergod5"])
+    dbmanager.insert(read_schema.table_name, [7, "Sergod6"])
+    dbmanager.insert(read_schema.table_name, [1, "Buenas tardes"])
+    dbmanager.insert(read_schema.table_name, [10, "Hola"])
     indexes = schema.get_indexes()
     for index in indexes.keys():
         if indexes[index] is not None:
