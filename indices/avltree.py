@@ -48,7 +48,7 @@ class AVLFile:
         if column.index_type != IndexType.AVL:
             raise Exception("column index type doesn't match with AVL")
         self.filename = utils.get_index_file_path(schema.table_name, column.name, IndexType.AVL)
-        self.logger = logger.CustomLogger(f"AVLFIlE-{schema.table_name}-{column.name}")
+        self.logger = logger.CustomLogger(f"AVLFIlE-{schema.table_name}-{column.name}".upper())
         self.root = -1
         self.NODE_SIZE = struct.calcsize(utils.calculate_column_format(column) + "iiii")
         if not os.path.exists(self.filename):

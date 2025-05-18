@@ -132,19 +132,23 @@ def test():
     import schemabuilder
     builder = schemabuilder.TableSchemaBuilder()
     builder.set_name("productos")
-    builder.add_column("id", DataType.INT, False)
-    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.AVL, varchar_length=20)
+    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=False)
+    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.BTREE, varchar_length=20)
     schema:TableSchema = builder.get()
     dbmanager.drop_table("productos")
     dbmanager.create_table(schema)
     read_schema = dbmanager.get_table_schema("productos")
 
-    dbmanager.insert(read_schema.table_name, [4, "Eduardo"])
-    dbmanager.insert(read_schema.table_name, [5, "Paca"])
-    dbmanager.insert(read_schema.table_name, [6, "Sergod"])
-    dbmanager.insert(read_schema.table_name, [6, "Sergod2"])
-    dbmanager.insert(read_schema.table_name, [6, "Buenas tardes"])
-    dbmanager.insert(read_schema.table_name, [6, "Hola"])
+    dbmanager.insert(read_schema.table_name, [4, "Sergod2"])
+    dbmanager.insert(read_schema.table_name, [6, "Paca"])
+    dbmanager.insert(read_schema.table_name, [2, "Sergod5"])
+    dbmanager.insert(read_schema.table_name, [5, "Sergod3"])
+    dbmanager.insert(read_schema.table_name, [8, "Sergod1"])
+    dbmanager.insert(read_schema.table_name, [7, "Eduardo"])
+    dbmanager.insert(read_schema.table_name, [40, "Hola"])
+    dbmanager.insert(read_schema.table_name, [11, "Sergod4"])
+    dbmanager.insert(read_schema.table_name, [3, "Sergod6"])
+    dbmanager.insert(read_schema.table_name, [9, "Buenas tardes"])
     indexes = schema.get_indexes()
     for index in indexes.keys():
         if indexes[index] is not None:
@@ -153,6 +157,17 @@ def test():
     for i in dbmanager.selectAll(schema.table_name):
         print(i)
 
+    btree = BPlusTree(schema, Column("nombre", DataType.VARCHAR, True, IndexType.BTREE, varchar_length=20))
+    print(btree.rangeSearch("Sergod", "Sergod9"))
+    print(btree.search("Paca"))
+    print(btree.search("Sergod5"))
+    print(btree.search("Sergod3"))
+    print(btree.search("Eduardo"))
+    print(btree.search("Hola"))
+    print(btree.search("Sergod4"))
+    print(btree.search("Sergod6"))
+    print(btree.search("Buenas tardes"))
+    print(btree.search("ONO"))
 
 if __name__ == "__main__":
     test()

@@ -20,6 +20,19 @@ def calculate_record_format(columns: list[Column]):
             raise NotImplementedError(f"Unsupported type {col.data_type}")
     return fmt
 
+def get_empty_value(column: Column):
+    if column.data_type == DataType.INT:
+        return -1
+    elif column.data_type == DataType.FLOAT:
+        return -1.0
+    elif column.data_type == DataType.VARCHAR:
+        return ""  # representamos vacío como string vacío
+    elif column.data_type == DataType.BOOL:
+        return False
+    else:
+        raise NotImplementedError(f"Unsupported type {column.data_type}")
+
+
 def calculate_column_format(column: Column):
     if column.data_type == DataType.INT:
         return "i"
