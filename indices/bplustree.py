@@ -317,20 +317,20 @@ class BPlusTree:
 		self.logger.info(f"Successful operation, found records with ids: {pointers}")
 		return pointers
 	
-	def search(self, id:int) -> int | None:
-		self.logger.info(f"SEARCH record with id: {id}")
+	def search(self, key:int) -> any | None:
+		self.logger.info(f"SEARCH record with id: {key}")
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
 			self.logger.fileIsEmpty(self.indexFile.filename)
-			self.logger.info(f"NOT FOUND record with id: {id}")
+			self.logger.info(f"NOT FOUND record with id: {key}")
 			return None
 		
-		record = self.searchAux(rootPos, id)
+		record = self.searchAux(rootPos, key)
 		if(record):
-			self.logger.info(f"FOUND record with id: {id}")
+			self.logger.info(f"FOUND record with id: {key}")
 			record.debug()
 		else:
-			self.logger.info(f"NOT FOUND record with id: {id}")
+			self.logger.info(f"NOT FOUND record with id: {key}")
 		return record
 	
 	def searchAux(self, nodePos:int, key:int) -> int | None:
