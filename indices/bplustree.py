@@ -1,12 +1,10 @@
 import struct
 import os
-import sys 
-import logging
+import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import logger
-from core.record_file import Record
 from core.schema import TableSchema, Column, DataType, IndexType
 from core import utils
 
