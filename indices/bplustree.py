@@ -89,7 +89,6 @@ class NodeBPlus:
 		data_buf = b''
 		type = utils.calculate_column_format(self.column)
 		for key in self.keys:
-			print(key)
 			data_buf += struct.pack(type, key.encode() if self.column.data_type == DataType.VARCHAR else key)
 		for pointer in self.pointers:
 			data_buf += struct.pack('i', pointer)
@@ -97,7 +96,7 @@ class NodeBPlus:
 		return data_buf
 
 	def debug(self):
-		self.logger.debug(f"Node with keys: {self.keys}, pointers: {self.pointers}, isLeaf: {self.isLeaf}, size: {self.size}, nextNode: {self.nextNode}")
+		print(f"Node with keys: {self.keys}, pointers: {self.pointers}, isLeaf: {self.isLeaf}, size: {self.size}, nextNode: {self.nextNode}")
 
 	@staticmethod
 	def unpack(record:bytes, column: Column):
@@ -212,7 +211,7 @@ class BPlusTree:
 		self.logger = logger.CustomLogger(f"BPLUSTREE-{schema.table_name}-{column.name}".upper())
 	
 	def insert(self, pos:int, val:any):
-		self.logger.info(f"INSERT record with id: {val}")
+		self.logger.warning(f"INSERT record with id: {val}")
 
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
@@ -295,7 +294,7 @@ class BPlusTree:
 			return True, upKey, upPointer
 	
 	def getAll(self) -> list[int]:
-		self.logger.info(f"GET ALL RECORDS")
+		self.logger.warning(f"GET ALL RECORDS")
 		firstPos:int = self.indexFile.getHeader()
 		if firstPos == -1:
 			self.logger.info(f"File: {self.indexFile.filename} is empty: []")
@@ -315,39 +314,70 @@ class BPlusTree:
 			node = self.indexFile.readBucket(node.nextNode)
 
 		self.logger.info(f"Successful operation, found records with ids: {pointers}")
+		self.printBuckets()
 		return pointers
 	
-	def search(self, key:int) -> any | None:
-		self.logger.info(f"SEARCH record with id: {key}")
+	def search(self, key) -> list[int]:
+		self.logger.warning(f"SEARCH record with id: {key}")
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
 			self.logger.fileIsEmpty(self.indexFile.filename)
 			self.logger.info(f"NOT FOUND record with id: {key}")
-			return None
+			return []
+
+		return self.rangeSearchAux(key, key)
+
+	def rangeSearch(self, ini, end) -> list[int]:
+		self.logger.warning(f"RANGE SEARCH records in range start: {ini} and end: {end}")
+
+		return self.rangeSearchAux(ini, end)
 		
-		record = self.searchAux(rootPos, key)
-		if(record):
-			self.logger.info(f"FOUND record with id: {key}")
-			record.debug()
-		else:
-			self.logger.info(f"NOT FOUND record with id: {key}")
-		return record
+	def rangeSearchAux(self, ini, end) -> list[int]:
+		rootPos = self.indexFile.getHeader()
+		if(rootPos == -1):
+			self.logger.fileIsEmpty(self.indexFile.filename)
+			self.logger.info(f"NOT FOUND records in range start: {ini} and end: {end}")
+			return []
+		
+		leafPos = self.searchAux(rootPos, ini)
+		
+		ite = 0
+		result = []
+		leafNode = self.indexFile.readBucket(leafPos)
+		while(ite < leafNode.size and leafNode.keys[ite] < ini):
+			ite += 1
+		if(ite == leafNode.size):
+			leafNode = self.indexFile.readBucket(leafNode.nextNode)
+			ite = 0
+			
+		while(leafNode.keys[ite] <= end):
+			result.append(leafNode.pointers[ite])
+			ite += 1
+			if(ite == leafNode.size):
+				leafNode = self.indexFile.readBucket(leafNode.nextNode)
+				ite = 0
+		return result
 	
-	def searchAux(self, nodePos:int, key:int) -> int | None:
+	def searchAux(self, nodePos:int, key) -> int:
 		node:NodeBPlus = self.indexFile.readBucket(nodePos)
 		if(node.isLeaf):
+			return nodePos
+			"""
 			self.logger.info(f"Searching in leaf: key={key}")
 			for i in range(node.size):
-				if(node.keys[i] == key):
+				if(node.keys[i] >= key):
 					self.logger.info(f"Record with key={key} was found on leaf")
 					return node.pointers[i]
 			self.logger.info(f"Record with key={key} was not found on leaf")
 			return None
+			"""
 
 		else:
 			self.logger.info(f"Searching in internal node: key={key}")
 			ite = 0
-			while(ite < node.size and node.keys[ite] <= key):
+			while(ite < node.size and node.keys[ite] < key):
+				ite += 1
+			if(ite < node.size and node.keys[ite] == key):
 				ite += 1
 			self.logger.info(f"Going to pointer: {node.pointers[ite]}")
 			return self.searchAux(node.pointers[ite], key)

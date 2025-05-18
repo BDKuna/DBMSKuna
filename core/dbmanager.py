@@ -132,23 +132,23 @@ def test():
     import schemabuilder
     builder = schemabuilder.TableSchemaBuilder()
     builder.set_name("productos")
-    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=False)
-    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.BTREE, varchar_length=20)
+    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=True, index_type=IndexType.BTREE)
+    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=20)
     schema:TableSchema = builder.get()
     dbmanager.drop_table("productos")
     dbmanager.create_table(schema)
     read_schema = dbmanager.get_table_schema("productos")
 
-    dbmanager.insert(read_schema.table_name, [4, "Eduardo"])
-    dbmanager.insert(read_schema.table_name, [5, "Paca"])
-    dbmanager.insert(read_schema.table_name, [6, "Sergod"])
-    dbmanager.insert(read_schema.table_name, [9, "Sergod2"])
-    dbmanager.insert(read_schema.table_name, [5, "Sergod3"])
-    dbmanager.insert(read_schema.table_name, [4, "Sergod4"])
+    dbmanager.insert(read_schema.table_name, [4, "Sergod2"])
+    dbmanager.insert(read_schema.table_name, [6, "Paca"])
     dbmanager.insert(read_schema.table_name, [2, "Sergod5"])
-    dbmanager.insert(read_schema.table_name, [7, "Sergod6"])
-    dbmanager.insert(read_schema.table_name, [1, "Buenas tardes"])
-    dbmanager.insert(read_schema.table_name, [10, "Hola"])
+    dbmanager.insert(read_schema.table_name, [5, "Sergod3"])
+    dbmanager.insert(read_schema.table_name, [8, "Sergod"])
+    dbmanager.insert(read_schema.table_name, [7, "Eduardo"])
+    dbmanager.insert(read_schema.table_name, [40, "Hola"])
+    dbmanager.insert(read_schema.table_name, [11, "Sergod4"])
+    dbmanager.insert(read_schema.table_name, [3, "Sergod6"])
+    dbmanager.insert(read_schema.table_name, [9, "Buenas tardes"])
     indexes = schema.get_indexes()
     for index in indexes.keys():
         if indexes[index] is not None:
@@ -157,6 +157,19 @@ def test():
     for i in dbmanager.selectAll(schema.table_name):
         print(i)
 
+    btree = BPlusTree(schema, Column("id", DataType.INT, True, IndexType.BTREE))
+    """print(btree.rangeSearch(4, 8))
+    print(btree.search(4))
+    print(btree.search(6))
+    print(btree.search(2))
+    print(btree.search(5))
+    print(btree.search(8))
+    print(btree.search(7))
+    print(btree.search(10))
+    print(btree.search(11))
+    print(btree.search(3))
+    print(btree.search(9))"""
+    
 
 if __name__ == "__main__":
     test()
