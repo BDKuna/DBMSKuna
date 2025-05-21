@@ -84,7 +84,7 @@ class DBManager:
     def select(self, select_schema : SelectSchema) -> dict[str, list]:
         table = self.get_table_schema(select_schema.table_name)
         if select_schema.all: # SELECT *
-            return self.selectAll(table)
+            return self.select_all(table)
         record_file = RecordFile(table)
         column_names = [column.name for column in table.columns]
         nonexistent = [column for column in select_schema.column_list if column not in column_names]
@@ -92,8 +92,8 @@ class DBManager:
             self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
         pos_list = self.select_condition(table, select_schema.condition)
         result = {
-            'Columns': column_names,
-            'Records': [record_file.read(pos).values for pos in pos_list]
+            'columns': column_names,
+            'records': [record_file.read(pos).values for pos in pos_list]
         }
         return result
 
@@ -101,12 +101,12 @@ class DBManager:
         # se espera solo retornar las posiciones de los registros que cumplen la condicion
         pass
 
-    def selectAll(self, tableSchema: TableSchema) -> dict[str, list]:
+    def select_all(self, tableSchema: TableSchema) -> dict[str, list]:
         primaryIndex = tableSchema.get_primary_index()
         record_file = RecordFile(tableSchema)
         result = {
-            'Columns': [i.name for i in tableSchema.columns],
-            'Records': [record_file.read(pos).values for pos in primaryIndex.getAll()]
+            'columns': [i.name for i in tableSchema.columns],
+            'records': [record_file.read(pos).values for pos in primaryIndex.getAll()]
         }
         return result
 
