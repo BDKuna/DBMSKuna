@@ -60,13 +60,14 @@ class TableSchema:
                 # ISAM(table_schema, column)
             case IndexType.HASH:
                 pass
-                # HASH(table_schema, column)
+                from indices.EHtree import ExtendibleHashTree
+                return ExtendibleHashTree(self, column)
             case IndexType.BTREE:
                 from indices.bplustree import BPlusTree
                 return BPlusTree(self, column)
             case IndexType.RTREE:
-                pass
-                # RTREE(table_schema, column)
+                from indices.Rtree import RTreeIndex
+                return RTreeIndex(self, column)
             case IndexType.SEQ:
                 pass
                 # SEQ(table_schema, column)
