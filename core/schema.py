@@ -60,7 +60,7 @@ class TableSchema:
                 # ISAM(table_schema, column)
             case IndexType.HASH:
                 pass
-                from indices.EH import ExtendibleHashTree
+                from indices.EHtree import ExtendibleHashTree
                 return ExtendibleHashTree(self, column)
             case IndexType.BTREE:
                 from indices.bplustree import BPlusTree

@@ -7,7 +7,7 @@ import core.utils
 from core.schema import DataType, TableSchema, IndexType, SelectSchema, Column
 from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
-from indices.EH import ExtendibleHashTree
+from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
 from core.record_file import Record, RecordFile
 import logger
@@ -51,12 +51,10 @@ class DBManager:
                         pass
                         # ISAM(table_schema, column)
                     case IndexType.HASH:
-                        pass
                         ExtendibleHashTree(table_schema, column)
                     case IndexType.BTREE:
                         BPlusTree(table_schema, column)
                     case IndexType.RTREE:
-                        pass
                         RTreeIndex(table_schema, column)
                     case IndexType.SEQ:
                         pass
@@ -134,8 +132,8 @@ def test():
     import schemabuilder
     builder = schemabuilder.TableSchemaBuilder()
     builder.set_name("productos")
-    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=False)
-    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, index_type=IndexType.BTREE, varchar_length=20)
+    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=True, index_type=IndexType.HASH)
+    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=True, varchar_length=20)
     schema:TableSchema = builder.get()
     dbmanager.drop_table("productos")
     dbmanager.create_table(schema)
@@ -341,4 +339,4 @@ def test_rtree():
 if __name__ == "__main__":
     #test()
     test_eh()
-    test_rtree()
+    #test_rtree()
