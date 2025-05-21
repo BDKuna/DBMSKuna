@@ -249,88 +249,85 @@ def test_eh():
     print("\n✅ Todos los tests de EHT pasaron.")
     
 def test_rtree():
-    from core.schema import DataType, IndexType
     import schemabuilder
-    from core.record_file import RecordFile
-
-    # 1) Preparo el DBManager y construyo el esquema
+    from core.schema import IndexType, DataType
+    from indices.Rtree import MBR, Circle, Point
+    # 1) Preparo DBManager y schema
     db = DBManager()
     builder = schemabuilder.TableSchemaBuilder()
     builder.set_name("puntos")
-    # a) Columna id como PK (sin índice espacial)
-    builder.add_column(name="id",
-                       data_type=DataType.INT,
-                       is_primary_key=True)
-    # b) Columna 'coord' con índice RTREE: pongo varchar_length > 0
-    builder.add_column(name="coord",
-                       data_type=DataType.VARCHAR,
-                       is_primary_key=False,
-                       index_type=IndexType.RTREE,
-                       varchar_length=32)
+    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=True)
+    builder.add_column(
+        name="coord",
+        data_type=DataType.VARCHAR,
+        is_primary_key=False,
+        index_type=IndexType.RTREE,
+        varchar_length=32
+    )
     schema = builder.get()
 
-    # 2) (Re)creo la tabla
+    # 2) (Re)creo la tabla limpia
     db.drop_table("puntos")
     db.create_table(schema)
 
-    # 3) Inserto unos puntos de prueba
+    # 3) Inserto puntos de prueba (WKT strings)
     ejemplos = [
         (1, "(10.0,20.0)"),
         (2, "(5.5, 5.5)"),
         (3, "(15.0,15.0)"),
         (4, "(12.0,22.0)"),
     ]
+    print("\n==> TEST INSERT ==")
     for pid, wkt in ejemplos:
-        # db.insert espera lista de valores en el orden de las columnas
         db.insert("puntos", [pid, wkt])
+        print(f"Inserted id={pid}, coord={wkt}")
 
-    # 4) Recupero el índice espacial
+    # 4) Obtengo el índice RTREE
     idx = schema.get_indexes()["coord"]
-    print("\n==> Objeto de índice R-Tree:", idx)
+    assert idx is not None
 
-    # 5) Uso RecordFile para leer registros desde disco
     rf = RecordFile(schema)
 
-    # 6) Pruebo getAll() → devuelve lista de punteros (ints)
-    ptrs = idx.getAll()                     # e.g. [0,1,2,3]
-    recs = [rf.read(p) for p in ptrs]       # recupero cada Record
-    geoms = [r.values[1] for r in recs]     # la segunda columna es 'coord'
-    print("getAll geometrías:", sorted(geoms))
-    assert set(geoms) == {e[1] for e in ejemplos}
+    # 5) Pruebo getAll()
+    print("\n==> TEST getAll() ==")
+    ptrs = idx.getAll()
+    recs = [rf.read(p) for p in ptrs]
+    geoms = [r.values[1] for r in recs]
+    print("getAll returned coords:", sorted(geoms))
+    assert set(geoms) == {wkt for _, wkt in ejemplos}
 
-    # 7) Pruebo search() sobre cada punto
-    print("\n==> Probando search()")
+    # 6) Pruebo search() en cada WKT
+    print("\n==> TEST search() ==")
     for _, wkt in ejemplos:
-        ptr_list = idx.search(wkt)
-        assert ptr_list, f"No encontró {wkt}"
-        # leo y verifico
-        rec = rf.read(ptr_list[0])
+        results = idx.search(wkt)
+        print(f"search({wkt}) -> positions {results}")
+        assert results, f"search no encontró {wkt}"
+        rec = rf.read(results[0])
         assert rec.values[1] == wkt
-        print(f"search({wkt!r}) -> OK")
 
-    # 8) Pruebo rangeSearch() con un rectángulo que atrape sólo algunos
-    print("\n==> Probando rangeSearch()")
-    # Para simplificar, convierto nuestros WKT de string "(x,y)" a floats
-    def parse(s):
-        x,y = s.strip("()").split(",")
-        return float(x), float(y)
-    # rango que incluya sólo los puntos (10,20) y (12,22)
-    xmin, ymin = 9.0, 19.0
-    xmax, ymax = 13.0, 23.0
-    inside = idx.rangeSearch(xmin, ymin, xmax, ymax)
+    # 7) Pruebo rangeSearch() con un MBR que incluya solo id 1 y 4
+    print("\n==> TEST rangeSearch() ==")
+    mbr = MBR(9.0, 19.0, 13.0, 23.0)
+    inside = idx.rangeSearch(mbr)
     ids_in = sorted(rf.read(p).values[0] for p in inside)
-    print(f"rangeSearch([{xmin},{ymin}]–[{xmax},{ymax}]) IDs:", ids_in)
+    print(f"rangeSearch({mbr.bounds()}) -> IDs {ids_in}")
     assert set(ids_in) == {1, 4}
 
-    # 9) Pruebo delete() y vuelvo a listar
-    print("\n==> Probando delete()")
-    borrado = "(5.5, 5.5)"
-    ok = idx.delete(borrado)
-    assert ok, "delete devolvió False"
-    ptrs2 = idx.getAll()
-    geoms2 = [rf.read(p).values[1] for p in ptrs2]
-    print(f"tras delete({borrado!r}) geometrías:", sorted(geoms2))
-    assert borrado not in geoms2
+    # 8) Pruebo delete()
+    print("\n==> TEST delete() ==")
+    to_delete = "(5.5, 5.5)"
+    ok = idx.delete(to_delete)
+    print(f"delete({to_delete}) -> {ok}")
+    assert ok is True
+    remaining = sorted(rf.read(p).values[1] for p in idx.getAll())
+    print("Remaining coords after delete:", remaining)
+    assert to_delete not in remaining
+
+    # 9) Pruebo delete() en inexistente
+    print("\n==> TEST delete non-existent ==")
+    ok2 = idx.delete("(0.0,0.0)")
+    print(f"delete((0.0,0.0)) -> {ok2}")
+    assert ok2 is False
 
     print("\n✅ Todos los tests de RTreeIndex pasaron correctamente.")
 
@@ -338,5 +335,5 @@ def test_rtree():
     
 if __name__ == "__main__":
     #test()
-    test_eh()
-    #test_rtree()
+    #test_eh()
+    test_rtree()

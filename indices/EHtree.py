@@ -190,7 +190,7 @@ class FileManager:
         return Bucket(bid, self.capacity, self)
 
     def delete_bucket(self, bid: int):
-        # aquí podrías implementar free-list si quieres reciclar buckets
+        # aquí podríamos implementar free-list si queremos reciclar buckets
         pass
 
 
