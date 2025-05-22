@@ -20,9 +20,10 @@ class IndexType(Enum):
     BTREE = auto()
     RTREE = auto()
     SEQ = auto()
+    NONE = auto()
 
 class Column:
-    def __init__(self, name, data_type : DataType, is_primary = False, index_type = None, varchar_length = -1):
+    def __init__(self, name, data_type : DataType, is_primary = False, index_type = IndexType.NONE, varchar_length = -1):
         self.name = name
         self.data_type = data_type
         self.is_primary = is_primary
@@ -38,7 +39,7 @@ class TableSchema:
         return next((col for col in self.columns if col.is_primary), None)
 
     def get_index_columns(self):
-        return [col for col in self.columns if col.index_type != IndexType.SEQ]
+        return [col for col in self.columns if col.index_type != IndexType.NONE]
 
     def get_column_by_name(self, name: str):
         return next((col for col in self.columns if col.name == name), None)
@@ -92,8 +93,13 @@ class TableSchema:
         return f"TableSchema(table_name={self.table_name}, columns={self.columns})"
 
 class SelectSchema:
-    def __init__(self, table_name: str = None, condition: ConditionSchema = None, all : bool = None, column_list: list[str] = None):
+    def __init__(self, table_name: str = None, condition_schema: ConditionSchema = None, all : bool = None, column_list: list[str] = None):
         self.table_name = table_name
-        self.condition = condition
+        self.condition_schema = condition_schema
         self.all = all
-        self.column_list = column_list if column_list else []   
+        self.column_list = column_list if column_list else []
+
+class DeleteSchema:
+    def __init__(self, table_name : str = None, condition_schema : ConditionSchema = None):
+        self.table_name = table_name
+        self.condition_schema = condition_schema
