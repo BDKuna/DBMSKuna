@@ -56,8 +56,8 @@ class TableSchema:
                 from indices.avltree import AVLTree
                 return AVLTree(self, column)
             case IndexType.ISAM:
-                pass
-                # ISAM(table_schema, column)
+                from indices.isam import ISAMIndex
+                return ISAMIndex(self, column)
             case IndexType.HASH:
                 pass
                 from indices.EHtree import ExtendibleHashTree

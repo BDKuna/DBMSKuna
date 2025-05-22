@@ -9,6 +9,7 @@ from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
+from indices.isam import ISAMIndex
 from core.record_file import Record, RecordFile
 import logger
 
@@ -48,8 +49,8 @@ class DBManager:
                     case IndexType.AVL:
                         AVLTree(table_schema, column)
                     case IndexType.ISAM:
+                        ISAMIndex(table_schema, column)
                         pass
-                        # ISAM(table_schema, column)
                     case IndexType.HASH:
                         ExtendibleHashTree(table_schema, column)
                     case IndexType.BTREE:
@@ -332,8 +333,83 @@ def test_rtree():
     print("\n✅ Todos los tests de RTreeIndex pasaron correctamente.")
 
     
-    
+def test_isam():
+    from core.record_file import RecordFile
+    from core.schema import DataType, IndexType
+    # 1) Preparar DBManager y esquema
+    import schemabuilder
+    db = DBManager()
+    builder = schemabuilder.TableSchemaBuilder()
+    builder.set_name("test_isam")
+    # Columna 'id' con índice ISAM
+    builder.add_column(
+        name="id",
+        data_type=DataType.INT,
+        is_primary_key=True,
+        index_type=IndexType.ISAM
+    )
+    # Columna 'name' sin índice
+    builder.add_column(
+        name="name",
+        data_type=DataType.VARCHAR,
+        is_primary_key=False,
+        varchar_length=20
+    )
+    schema = builder.get()
+
+    # 2) Crear tabla limpia
+    db.drop_table("test_isam")
+    db.create_table(schema)
+
+    # 3) Inserciones de prueba (id, name)
+    ejemplos = [
+        (3, "c"),
+        (1, "a"),
+        (4, "d"),
+        (2, "b"),
+    ]
+    print("\n==> TEST INSERT ==")
+    for i, name in ejemplos:
+        db.insert("test_isam", [i, name])
+        print(f"Inserted id={i}, name={name}")
+
+    # 4) Obtener instancia ISAMIndex
+    idx = schema.get_indexes()["id"]
+    assert idx is not None
+    rf = RecordFile(schema)
+
+    # 5) TEST getAll()
+    print("\n==> TEST getAll() ==")
+    ptrs = idx.getAll()
+    rec_ids = sorted(rf.read(p).values[0] for p in ptrs)
+    print("getAll returned IDs:", rec_ids)
+    assert set(rec_ids) == {i for i, _ in ejemplos}
+
+    # 6) TEST search()
+    print("\n==> TEST search() ==")
+    for i, _ in ejemplos:
+        res = idx.search(i)
+        print(f"search({i}) -> positions {res}")
+        assert res and rf.read(res[0]).values[0] == i
+
+    # 7) TEST rangeSearch(2,3)
+    print("\n==> TEST rangeSearch() ==")
+    inrange = idx.rangeSearch(2, 3)
+    ids_inrange = sorted(rf.read(p).values[0] for p in inrange)
+    print(f"rangeSearch(2,3) -> IDs {ids_inrange}")
+    assert set(ids_inrange) == {2, 3}
+
+    # 8) TEST delete(non-existent)
+    print("\n==> TEST delete() ==")
+    ok = idx.delete(99)
+    print(f"delete(99) -> {ok}")
+    assert ok is False
+
+    print("\n✅ Todos los tests de ISAMIndex pasaron correctamente.")
+
+
 if __name__ == "__main__":
     #test()
     #test_eh()
-    test_rtree()
+    #test_rtree()
+    test_isam()
