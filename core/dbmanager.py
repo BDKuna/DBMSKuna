@@ -3,7 +3,6 @@ from collections import Counter
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
-import core.utils
 from core.schema import DataType, TableSchema, IndexType, SelectSchema, Column
 from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
@@ -81,19 +80,38 @@ class DBManager:
             self.logger.error("table doesn't exists")
             #self.error("table doesn't exist")
 
-    def select(self, select_schema : SelectSchema):
+    #------------------------ SELECT IMPLEMENTATION ----------------------------
+
+    def select(self, select_schema : SelectSchema) -> dict[str, list]:
         table = self.get_table_schema(select_schema.table_name)
-        if not select_schema.all:
-            column_names = [column.name for column in table.columns]
-            nonexistent = [column for column in select_schema.column_list if column not in column_names]
-            if nonexistent:
-                self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
-        
-        result = self.select_condition(table, select_schema.condition)
+        if select_schema.all: # SELECT *
+            return self.select_all(table)
+        record_file = RecordFile(table)
+        column_names = [column.name for column in table.columns]
+        nonexistent = [column for column in select_schema.column_list if column not in column_names]
+        if nonexistent:
+            self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
+        pos_list = self.select_condition(table, select_schema.condition)
+        result = {
+            'columns': column_names,
+            'records': [record_file.read(pos).values for pos in pos_list]
+        }
         return result
 
-    def select_condition(self, table_schema : TableSchema, condition):
+    def select_condition(self, table_schema : TableSchema, condition) -> list[int]:
+        # se espera solo retornar las posiciones de los registros que cumplen la condicion
         pass
+
+    def select_all(self, tableSchema: TableSchema) -> dict[str, list]:
+        primaryIndex = tableSchema.get_primary_index()
+        record_file = RecordFile(tableSchema)
+        result = {
+            'columns': [i.name for i in tableSchema.columns],
+            'records': [record_file.read(pos).values for pos in primaryIndex.getAll()]
+        }
+        return result
+
+    #------------------------ INSERT IMPLEMENTATION ----------------------------
 
     def insert(self, table_name:str, values: list):
         tableSchema: TableSchema = self.get_table_schema(table_name)
@@ -110,12 +128,6 @@ class DBManager:
             if indexes[index] is not None:
                 indexes[index].insert(pos, record.values[i])
 
-    def selectAll(self, table_name:str):
-        tableSchema: TableSchema = self.get_table_schema(table_name)
-        primaryIndex = tableSchema.get_primary_index()
-        record_file = RecordFile(tableSchema)
-        return [record_file.read(pos) for pos in primaryIndex.getAll()]
-    
     def delete(self):
         pass
 
@@ -155,8 +167,8 @@ def test():
         if indexes[index] is not None:
             print(indexes[index])
 
-    for i in dbmanager.selectAll(schema.table_name):
-        print(i)
+    select_schema = SelectSchema(schema.table_name,all=True)
+    print(dbmanager.select(select_schema))
 
     btree = BPlusTree(schema, Column("nombre", DataType.VARCHAR, True, IndexType.BTREE, varchar_length=20))
     print(btree.rangeSearch("Sergod", "Sergod9"))
@@ -169,6 +181,7 @@ def test():
     print(btree.search("Sergod6"))
     print(btree.search("Buenas tardes"))
     print(btree.search("ONO"))
+    assert 1==1
     
     
     
