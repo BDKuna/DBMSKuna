@@ -329,6 +329,10 @@ class BPlusTree:
 		return self.rangeSearchAux(key, key)
 
 	def rangeSearch(self, ini, end) -> list[int]:
+		if(ini == None):
+			ini = utils.get_min_value(self.column)
+		if(end == None):
+			end = utils.get_max_value(self.column)
 		self.logger.warning(f"RANGE SEARCH records in range start: {ini} and end: {end}")
 
 		return self.rangeSearchAux(ini, end)

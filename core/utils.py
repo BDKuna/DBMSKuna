@@ -32,6 +32,30 @@ def get_empty_value(column: Column):
     else:
         raise NotImplementedError(f"Unsupported type {column.data_type}")
 
+def get_min_value(column: Column):
+    if column.data_type == DataType.INT:
+        return -10**18
+    elif column.data_type == DataType.FLOAT:
+        return -10**18
+    elif column.data_type == DataType.VARCHAR:
+        return ""  # representamos vacío como string vacío
+    elif column.data_type == DataType.BOOL:
+        return False
+    else:
+        raise NotImplementedError(f"Unsupported type {column.data_type}")
+
+def get_max_value(column: Column):
+    if column.data_type == DataType.INT:
+        return 10**18
+    elif column.data_type == DataType.FLOAT:
+        return 10**18
+    elif column.data_type == DataType.VARCHAR:
+        return chr(0x10FFFF) * 10  # representamos vacío como string vacío
+    elif column.data_type == DataType.BOOL:
+        return True
+    else:
+        raise NotImplementedError(f"Unsupported type {column.data_type}")
+
 
 def calculate_column_format(column: Column):
     if column.data_type == DataType.INT:
