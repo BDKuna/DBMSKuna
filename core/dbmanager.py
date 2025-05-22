@@ -4,10 +4,14 @@ from bitarray import bitarray
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
+
 import core.utils
-from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
+from core.schema import DataType, TableSchema, IndexType, SelectSchema, Column, DeleteSchema
 from indices.bplustree import BPlusTree
+from indices.avltree import AVLTree
+from indices.EHtree import ExtendibleHashTree
+from indices.Rtree import RTreeIndex
 from core.record_file import Record, RecordFile
 import logger
 
@@ -167,7 +171,10 @@ class DBManager:
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
-            self.error("table doesn't exist")
+            self.logger.error("table doesn't exists")
+            #self.error("table doesn't exist")
+
+    #------------------------ SELECT IMPLEMENTATION ----------------------------
 
     def select(self, select_schema : SelectSchema) -> list[Record]:
         table = self.get_table_schema(select_schema.table_name)
@@ -222,9 +229,52 @@ class DBManager:
             return self.list_to_bitmap(index.search(True))
         else:
             self.error("invalid condition")
+"""
+        def select(self, select_schema : SelectSchema) -> dict[str, list]:
+        table = self.get_table_schema(select_schema.table_name)
+        if select_schema.all: # SELECT *
+            return self.select_all(table)
+        record_file = RecordFile(table)
+        column_names = [column.name for column in table.columns]
+        nonexistent = [column for column in select_schema.column_list if column not in column_names]
+        if nonexistent:
+            self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
+        pos_list = self.select_condition(table, select_schema.condition)
+        result = {
+            'columns': column_names,
+            'records': [record_file.read(pos).values for pos in pos_list]
+        }
+        return result
 
-    def insert(self):
+    def select_condition(self, table_schema : TableSchema, condition) -> list[int]:
+        # se espera solo retornar las posiciones de los registros que cumplen la condicion
         pass
+"""
+    def select_all(self, tableSchema: TableSchema) -> dict[str, list]:
+        primaryIndex = tableSchema.get_primary_index()
+        record_file = RecordFile(tableSchema)
+        result = {
+            'columns': [i.name for i in tableSchema.columns],
+            'records': [record_file.read(pos).values for pos in primaryIndex.getAll()]
+        }
+        return result
+
+    #------------------------ INSERT IMPLEMENTATION ----------------------------
+
+    def insert(self, table_name:str, values: list):
+        tableSchema: TableSchema = self.get_table_schema(table_name)
+        if len(values) != len(tableSchema.columns):
+            raise Exception("El número de valores no coincide con el número de columnas")
+        record = Record(tableSchema, values)
+        record_file = RecordFile(tableSchema)
+        pos = record_file.append(record)
+
+        indexes = tableSchema.get_indexes()
+
+        #insertar los indices
+        for i, index in enumerate(indexes.keys()):
+            if indexes[index] is not None:
+                indexes[index].insert(pos, record.values[i])
 
     def delete(self, delete_schema : DeleteSchema) -> None:
         table = self.get_table_schema(delete_schema.table_name)
@@ -269,22 +319,4 @@ class DBManager:
                 path = f"{self.tables_path}/{table_schema.table_name}"
                 self.save_table_schema(table_schema, path)
                 return
-
-def test():
-    dbmanager = DBManager()
-    import schemabuilder
-    builder = schemabuilder.TableSchemaBuilder()
-    builder.set_name("productos")
-    builder.add_column("id", DataType.INT, True, IndexType.BTREE).add_column("nombre", DataType.VARCHAR, False, IndexType.HASH, 20)
-    schema = builder.get()
-    dbmanager.drop_table("productos")
-    dbmanager.create_table(schema)
-    
-    read_schema = dbmanager.get_table_schema("productos")
-    print(read_schema.table_name)
-    for i in read_schema.columns:
-        print(f"{i.data_type}, {i.index_type}, {i.is_primary}, {i.name}")
-
-
-if __name__ == "__main__":
-    test()
+              

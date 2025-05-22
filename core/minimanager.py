@@ -1,6 +1,7 @@
-from core.schema import Column, DataType, TableSchema, IndexType
+from core.schema import TableSchema, IndexType
 from core.record_file import Record, RecordFile
 from indices.avltree import AVLTree
+
 
 class miniManager:
     def __init__(self, schema: TableSchema):
@@ -37,7 +38,9 @@ class miniManager:
         if len(values) != len(self.columns):
             raise Exception("El número de valores no coincide con el número de columnas")
         record = Record(self.schema, values)
+
         pos = self.record_file.append(record)
+
         #insertar los indices
         for index in self.indexes.keys():
             if self.indexes[index] is not None:
@@ -101,48 +104,3 @@ class miniManager:
         r += str(self.schema) + "\n"
         r += "-------------------------------------------\n"
         return r
-
-
-
-
-
-if __name__ == "__main__":
-    # Ejemplo de uso
-    columns = [
-        Column("id", DataType.INT, index_type=IndexType.AVL, is_primary=True),
-        Column("name", DataType.VARCHAR, varchar_length=50),
-        Column("age", DataType.INT, index_type=IndexType.AVL)
-    ]
-    schema = TableSchema("users", columns)
-    manager = miniManager(schema)
-    values = [
-        [1, "Alice", 30],
-        [2, "Bob", 25],
-        [3, "Charlie", 35],
-        [4, "David", 40],
-        [5, "Eva", 28],
-        [6, "Frank", 32],
-        [7, "Grace", 27],
-        [8, "Hannah", 29],
-        [9, "Ian", 31],
-        [10, "Julia", 26]
-    ]
-
-    try:
-        for i in values[:5]:
-            # Insertar un registro
-            manager.insert(i)
-        for i in manager.getAll():
-            print(i)
-        result = manager._search_equality("age", 30)
-        manager.delete(result)
-        for i in manager.getAll():
-            print(i)
-
-
-    except Exception as e:
-        manager.clear()
-        raise e
-    manager.clear()
-
-
