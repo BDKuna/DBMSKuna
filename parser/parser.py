@@ -1,10 +1,8 @@
 import os, sys
-from enum import Enum, auto
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
 from scanner import Token, Scanner
-from core.schemabuilder import TableSchemaBuilder
 from core.conditionschema import BinaryOp, Condition, ConditionColumn, ConditionValue, NotCondition, BinaryCondition, BetweenCondition, BooleanColumn
 from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column
 from core.dbmanager import DBManager
@@ -433,12 +431,12 @@ class Parser:
             between_condition.left = ConditionColumn(column_name)
             if not self.match_values():
                 self.error("expected a value after BETWEEN keyword")
-            between_condition.mid = ConditionValue(self.previous.lexema)
+            between_condition.mid = ConditionValue(int(self.previous.lexema)) # TODO depende del tipo (en utils)
             if not self.match(Token.Type.AND):
                 self.error("expected AND keyword after value in BETWEEN clause")
             if not self.match_values():
                 self.error("expected a value after AND keyword y BETWEEN clause")
-            between_condition.right = ConditionValue(self.previous.lexema)
+            between_condition.right = ConditionValue(int(self.previous.lexema))
             return between_condition
         simple_condition = BinaryCondition()
         simple_condition.left = ConditionColumn(column_name)
@@ -462,7 +460,7 @@ class Parser:
                 self.error("unknown conditional operator")
         if not self.match_values():
             self.error("expected a value after conditional operator")
-        simple_condition.right = ConditionValue(self.previous.lexema)
+        simple_condition.right = ConditionValue(int(self.previous.lexema))
         return simple_condition
 
 
@@ -800,7 +798,7 @@ class Interpreter:
         self.dbmanager.drop_table(stmt.table_name)
 
     def interpret_insert_stmt(self, stmt : InsertStmt):
-        pass
+        pass # TODO
 
     def interpret_delete_stmt(self, stmt : DeleteStmt):
         delete_schema = DeleteSchema(stmt.table_name, ConditionSchema(stmt.condition))
@@ -818,7 +816,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     scanner = Scanner(sys.argv[1])
-    parser = Parser(scanner)
+    parser = Parser(scanner) # TODO parsear RTree
     sql = parser.parse()
     #printer = Printer()
     #printer.print(sql)

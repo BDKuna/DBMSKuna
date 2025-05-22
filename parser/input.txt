@@ -21,6 +21,5 @@ CREATE INDEX idx_fecha ON ventas USING RTREE(fecha);
 DROP INDEX idx_fecha ON ventas;
 DELETE FROM ventas WHERE fecha < '2023-01-01';*/
 
-
-select * from productos
-where id = 1
+select id, nombre from productos
+where not id != 6

@@ -67,8 +67,11 @@ class DBManager:
         return index
 
     def list_to_bitmap(self, list : list[int]) -> bitarray:
-        max_id = max(list)
-        bitmap = bitarray(max_id + 1 + 1)
+        if len(list) == 0:
+            bitmap = bitarray(1)
+        else:
+            max_id = max(list)
+            bitmap = bitarray(max_id + 1 + 1)
         bitmap.setall(0)
 
         for id in list:
@@ -98,6 +101,8 @@ class DBManager:
         return a & b
 
     def bitmap_not(self, a : bitarray) -> bitarray:
+        print(a)
+        print(~a)
         return ~a
     
     def bitmap_difference(self, a : bitarray, b : bitarray) -> bitarray:
@@ -110,8 +115,8 @@ class DBManager:
         for id in ids:
             records.append(record_file.read(id))
         if bitmap[0]:
-            id = ids[-1] + 1
-            while id <= record_file.max_id():
+            id = len(bitmap) -1
+            while id < record_file.max_id():
                 records.append(record_file.read(id))
                 id += 1
         return records
@@ -125,7 +130,7 @@ class DBManager:
             record_file.delete(id)
         if bitmap[0]:
             id = ids[-1] + 1
-            while id <= record_file.max_id():
+            while id < record_file.max_id():
                 records.append(record_file.read(id))
                 record_file.delete(id)
                 id += 1
@@ -194,7 +199,7 @@ class DBManager:
             'records': [record.values for record in result]
         }
 
-    def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray:
+    def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray: # TODO chequear tipado en comparaciones
         condition_type = type(condition)
         if condition_type == BinaryCondition:
             op = condition.op
@@ -206,7 +211,7 @@ class DBManager:
                 case BinaryOp.EQ: # Usa indices
                     index = self.get_index(table_schema, condition.left.column_name)
                     return self.list_to_bitmap(index.search(condition.right.value))
-                case BinaryOp.NEQ: # No usa indices
+                case BinaryOp.NEQ: # Usa indices
                     index = self.get_index(table_schema, condition.left.column_name)
                     return self.bitmap_not(self.list_to_bitmap(index.search(condition.right.value)))
                 case BinaryOp.LT: # Usa indices (menos hash)
@@ -223,7 +228,7 @@ class DBManager:
                     return self.list_to_bitmap(index.rangeSearch(condition.right.value, None))
         elif condition_type == BetweenCondition: # Usa indices (menos hash)
             index = self.get_index(table_schema, condition.left.column_name)
-            return self.list_to_bitmap(index.range_search(condition.mid.value, condition.right.value))
+            return self.list_to_bitmap(index.rangeSearch(condition.mid.value, condition.right.value))
         elif condition_type == NotCondition:
             return self.bitmap_not(self.select_condition(table_schema, condition.condition))
         elif condition_type == BooleanColumn: # Usa indices
@@ -312,7 +317,7 @@ def test():
     builder.add_column(name="id", data_type=DataType.INT, is_primary_key=True, index_type=IndexType.BTREE)
     builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=20)
     schema:TableSchema = builder.get()
-    """
+    
     dbmanager.drop_table("productos")
     dbmanager.create_table(schema)
     read_schema = dbmanager.get_table_schema("productos")
@@ -331,7 +336,7 @@ def test():
     for index in indexes.keys():
         if indexes[index] is not None:
             print(indexes[index])
-    """
+    
 
     btree = BPlusTree(schema, Column("id", DataType.INT, True, IndexType.BTREE))
     print(btree.search(2))
@@ -353,4 +358,4 @@ def test():
     """
     assert 1==1
 
-#test()
+# test()
