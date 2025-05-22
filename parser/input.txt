@@ -23,4 +23,4 @@ DELETE FROM ventas WHERE fecha < '2023-01-01';*/
 
 
 select * from productos
-where nombre = 'Sergod'
+where id = 1

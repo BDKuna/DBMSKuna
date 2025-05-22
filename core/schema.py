@@ -35,6 +35,9 @@ class TableSchema:
         self.table_name = table_name.lower() if table_name else None
         self.columns = columns if columns else []
 
+    def error(self, error : str):
+        raise RuntimeError(error)
+
     def get_primary_key(self):
         return next((col for col in self.columns if col.is_primary), None)
 
@@ -60,7 +63,6 @@ class TableSchema:
                 pass
                 # ISAM(table_schema, column)
             case IndexType.HASH:
-                pass
                 from indices.EHtree import ExtendibleHashTree
                 return ExtendibleHashTree(self, column)
             case IndexType.BTREE:
@@ -72,8 +74,8 @@ class TableSchema:
             case IndexType.SEQ:
                 pass
                 # SEQ(table_schema, column)
-            case None:
-                None
+            case IndexType.NONE:
+                return None
             case _:
                 self.error("invalid index type")
 
