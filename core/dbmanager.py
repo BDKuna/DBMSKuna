@@ -9,6 +9,7 @@ from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
 from indices.isam import ISAMIndex
+from indices.brin import BRINIndex
 from core.record_file import Record, RecordFile
 import logger
 
@@ -49,13 +50,14 @@ class DBManager:
                         AVLTree(table_schema, column)
                     case IndexType.ISAM:
                         ISAMIndex(table_schema, column)
-                        pass
                     case IndexType.HASH:
                         ExtendibleHashTree(table_schema, column)
                     case IndexType.BTREE:
                         BPlusTree(table_schema, column)
                     case IndexType.RTREE:
                         RTreeIndex(table_schema, column)
+                    case IndexType.BRIN:
+                        BRINIndex(table_schema, column)
                     case IndexType.SEQ:
                         pass
                         # SEQ(table_schema, column)
@@ -420,9 +422,109 @@ def test_isam():
 
     print("\n✅ Todos los tests de ISAMIndex pasaron correctamente.")
 
+def test_brin():
+    from core.dbmanager import DBManager
+    from core.schema import DataType, IndexType, SelectSchema
+    import schemabuilder
+    from core.record_file import RecordFile, Record
+
+    # 1) Definimos un esquema de prueba con un índice BRIN sobre 'value'
+    db = DBManager()
+    builder = schemabuilder.TableSchemaBuilder()
+    builder.set_name("test_generic_brin")
+    builder.add_column(name="key",   data_type=DataType.INT,     is_primary_key=True,  index_type=IndexType.BRIN)
+    builder.add_column(name="value", data_type=DataType.INT,     is_primary_key=False)
+    builder.add_column(name="tag",   data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=10)
+    schema = builder.get()
+
+    # 2) Crear tabla limpia
+    db.drop_table(schema.table_name)
+    db.create_table(schema)
+
+    # 3) Inserción de registros de ejemplo: (key, value, tag)
+    ejemplos = [
+        (1, 100, "A"),
+        (2, 200, "B"),
+        (3, 300, "C"),
+        (4, 400, "D"),
+        (5, 500, "E"),
+    ]
+    for rec in ejemplos:
+        db.insert(schema.table_name, list(rec))
+    print("Insertados:", ejemplos)
+
+    # 4) SELECT * para verificar contenido
+    sel = SelectSchema(schema.table_name, all=True)
+    full = db.select(sel)
+    print("SELECT * ->", full)
+
+    # 5) Obtengo el BRINIndex sobre la columna 'key'
+    brin_idx = schema.get_indexes()["key"]
+    assert brin_idx is not None
+
+    rf = RecordFile(schema)
+
+    # 6) TEST search(): buscamos cada key y verificamos lectura vía RecordFile
+    print("\n-- TEST search() --")
+    for key, value, tag in ejemplos:
+        positions = brin_idx.search(key)
+        assert isinstance(positions, list), "search debe devolver lista de posiciones"
+        assert positions, f"search({key}) no devolvió posiciones"
+        # Leer el primer resultado y comprobar sus valores
+        rec = rf.read(positions[0]).values
+        assert rec[0] == key and rec[1] == value and rec[2] == tag
+        print(f"search({key}) -> pos {positions[0]}, record {rec}")
+
+    # 7) TEST search() inexistente
+    print("\n-- TEST search non-existent --")
+    pos_empty = brin_idx.search(9999)
+    assert pos_empty == [], "search de existente debe devolver lista vacía"
+    print("search(9999) ->", pos_empty)
+
+    # 8) TEST rangeSearch sobre id
+    print("\n-- TEST rangeSearch(2,4) --")
+    pos_range = brin_idx.rangeSearch(2, 4)
+    found_ids = sorted(rf.read(p).values[0] for p in pos_range)
+    assert found_ids == [2,3,4], f"rangeSearch devolvió {found_ids}"
+    print("rangeSearch -> ids", found_ids)
+
+    # 9) TEST getAll()
+    print("\n-- TEST getAll() --")
+    all_pos = brin_idx.getAll()
+    all_keys = sorted(rf.read(p).values[0] for p in all_pos)
+    assert all_keys == [1,2,3,4,5]
+    print("getAll -> keys", all_keys)
+
+    # 10) TEST delete(key=3)
+    print("\n-- TEST delete(3) --")
+    ok = brin_idx.delete(3)
+    assert ok is True
+    assert brin_idx.search(3) == []
+    # actualizar lista completa
+    all_pos2 = brin_idx.getAll()
+    keys2 = sorted(rf.read(p).values[0] for p in all_pos2)
+    assert keys2 == [1,2,4,5]
+    print("delete(3) -> remaining keys", keys2)
+
+    # 11) TEST update(key=2 -> value=250, tag='B2')")
+    print("\n-- TEST update(2) --")
+    new_rec = Record(schema, [2, 250, "B2"])
+    ok2 = brin_idx.update(2, new_rec)
+    assert ok2 is True
+    # verificar actualización
+    pos2 = brin_idx.search(2)[0]
+    rec2 = rf.read(pos2).values
+    assert rec2 == [2, 250, "B2"]
+    print("update(2) -> record", rec2)
+
+    print("\n✅ Todos los tests genéricos de BRINIndex pasaron correctamente.")
+
+
 
 if __name__ == "__main__":
     #test()
     #test_eh()
     #test_rtree()
-    test_isam()
+    #test_isam()
+    test_brin()
+    

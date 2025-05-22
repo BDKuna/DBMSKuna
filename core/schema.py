@@ -20,6 +20,7 @@ class IndexType(Enum):
     BTREE = auto()
     RTREE = auto()
     SEQ = auto()
+    BRIN = auto()
 
 class Column:
     def __init__(self, name, data_type : DataType, is_primary = False, index_type = None, varchar_length = -1):
@@ -68,6 +69,9 @@ class TableSchema:
             case IndexType.RTREE:
                 from indices.Rtree import RTreeIndex
                 return RTreeIndex(self, column)
+            case IndexType.BRIN:
+                from indices.brin import BRINIndex
+                return BRINIndex(self, column)
             case IndexType.SEQ:
                 pass
                 # SEQ(table_schema, column)
