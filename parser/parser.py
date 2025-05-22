@@ -6,7 +6,7 @@ if root_path not in sys.path:
 from scanner import Token, Scanner
 from core.schemabuilder import TableSchemaBuilder
 from core.conditionschema import BinaryOp, Condition, ConditionColumn, ConditionValue, NotCondition, BinaryCondition, BetweenCondition, BooleanColumn
-from core.schema import TableSchema, DataType, IndexType
+from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column
 from core.dbmanager import DBManager
 
 class Stmt:
@@ -45,7 +45,7 @@ class DeleteStmt(Stmt):
 
 # <column-def> ::= <column-name> <data-type> [ "PRIMARY" "KEY" ] [ "INDEX" <index-type> ]
 class ColumnDefinition():
-    def __init__(self, column_name : str = None, data_type : DataType = None, is_primary_key : bool = False, index_type : IndexType = IndexType.SEQ, varchar_limit : int = 0):
+    def __init__(self, column_name : str = None, data_type : DataType = None, is_primary_key : bool = False, index_type : IndexType = IndexType.NONE, varchar_limit : int = 0):
         self.column_name = column_name
         self.data_type = data_type
         self.is_primary_key = is_primary_key
@@ -275,7 +275,7 @@ class Parser:
                 case _:
                     self.error("unknown index type")
         else:
-            column_definition.index_type = IndexType.SEQ
+            column_definition.index_type = IndexType.NONE
         return column_definition
                 
 
@@ -657,6 +657,8 @@ class Printer:
                 self.print_line(f"-> RTREE")
             case IndexType.SEQ:
                 self.print_line(f"-> SEQ")
+            case IndexType.NONE:
+                self.print_line(f"-> NONE")
         self.indent -= 2
 
     def print_drop_table_stmt(self, stmt : DropTableStmt):
@@ -786,10 +788,29 @@ class Interpreter:
             self.error("unknown statement type")
 
     def interpret_select_stmt(self, stmt : SelectStmt):
-        pass
+        select_schema = SelectSchema(stmt.table_name, ConditionSchema(stmt.condition), stmt.all, stmt.column_list)
+        self.dbmanager.select(select_schema)
 
     def interpret_create_table_stmt(self, stmt : CreateTableStmt):
+        column_list = [Column(column_def.column_name, column_def.data_type, column_def.is_primary_key, column_def.index_type, column_def.varchar_limit) for column_def in stmt.column_def_list]
+        table_schema = TableSchema(stmt.table_name, column_list)
+        self.dbmanager.create_table(table_schema)
+
+    def interpret_drop_table_stmt(self, stmt : DropTableStmt):
+        self.dbmanager.drop_table(stmt.table_name)
+
+    def interpret_insert_stmt(self, stmt : InsertStmt):
         pass
+
+    def interpret_delete_stmt(self, stmt : DeleteStmt):
+        delete_schema = DeleteSchema(stmt.table_name, ConditionSchema(stmt.condition))
+        self.dbmanager.delete(delete_schema)
+
+    def interpret_create_index_stmt(self, stmt : CreateIndexStmt):
+        self.dbmanager.create_index(stmt.table_name, stmt.index_name, stmt.column_list, stmt.index_type)
+
+    def interpret_drop_index_stmt(self, stmt : DropIndexStmt):
+        self.dbmanager.drop_index(stmt.table_name, stmt.index_name)
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

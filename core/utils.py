@@ -35,6 +35,7 @@ class IndexType(Enum):
     BTREE = auto()
     RTREE = auto()
     SEQ = auto()
+    NONE = auto()
 
 
 def get_table_file_path(table_name: str, filename: str) -> str:
