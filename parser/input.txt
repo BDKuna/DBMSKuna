@@ -1,4 +1,5 @@
-CREATE TABLE ventas (
+
+/*CREATE TABLE ventas (
     id INT PRIMARY KEY INDEX BTREE,
     producto VARCHAR(50) INDEX HASH,
     cantidad INT,
@@ -18,4 +19,8 @@ WHERE (precio > 100 AND cantidad >= 2)
 
 CREATE INDEX idx_fecha ON ventas USING RTREE(fecha);
 DROP INDEX idx_fecha ON ventas;
-DELETE FROM ventas WHERE fecha < '2023-01-01';
+DELETE FROM ventas WHERE fecha < '2023-01-01';*/
+
+
+select * from productos
+where nombre = 'Sergod'

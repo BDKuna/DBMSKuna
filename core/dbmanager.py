@@ -5,9 +5,8 @@ root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
 
-import core.utils
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
-from core.schema import DataType, TableSchema, IndexType, SelectSchema, Column, DeleteSchema
+from core.schema import TableSchema, IndexType, SelectSchema, DeleteSchema
 from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
@@ -46,18 +45,18 @@ class DBManager:
                 index_type = column.index_type
                 match index_type:
                     case IndexType.AVL:
-                        # index = AVLTree(table_schema, column)
+                        index = AVLTree(table_schema, column)
                         pass
                     case IndexType.ISAM:
                         # index = ISAM(table_schema, column)
                         pass
                     case IndexType.HASH:
-                        # index = ExtendibleHashTree(table_schema, column)
+                        index = ExtendibleHashTree(table_schema, column)
                         pass
                     case IndexType.BTREE:
                         index = BPlusTree(table_schema, column)
                     case IndexType.RTREE:
-                        # index = RTreeIndex(table_schema, column)
+                        index = RTreeIndex(table_schema, column)
                         pass
                     case IndexType.NONE:
                         # index = NoIndex(table_schema, column)
@@ -146,7 +145,7 @@ class DBManager:
 
             repeats = [name for name, count in counter.items() if count > 1]
             if len(repeats) > 0:
-                self.error(f"the table can't have multiple columns with the same name (repeated names: {",".join(repeats)})")
+                self.error(f"the table can't have multiple columns with the same name (repeated names: {','.join(repeats)})")
 
             counter = Counter(column.is_primary for column in table_schema.columns)
             if counter[True] == 0:
@@ -176,13 +175,13 @@ class DBManager:
 
     #------------------------ SELECT IMPLEMENTATION ----------------------------
 
-    def select(self, select_schema : SelectSchema) -> list[Record]:
+    def select(self, select_schema : SelectSchema) -> dict[str, list]:
         table = self.get_table_schema(select_schema.table_name)
+        column_names = [column.name for column in table.columns]
         if not select_schema.all:
-            column_names = [column.name for column in table.columns]
             nonexistent = [column for column in select_schema.column_list if column not in column_names]
             if nonexistent:
-                self.error(f"some columns don't exist (nonexistent columns: {",".join(nonexistent)})")
+                self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
         
         bitmap = self.select_condition(table, select_schema.condition_schema.condition)
         result = self.retrieve_data(table, bitmap)
@@ -190,7 +189,10 @@ class DBManager:
             for record in result:
                 value_map = {col.name: val for col, val in zip(table.columns, record.values)}
                 record.values = [value_map[name] for name in select_schema.column_list]
-        return result
+        return {
+            'columns': column_names if select_schema.all else select_schema.column_list,
+            'records': [record.values for record in result]
+        }
 
     def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray:
         condition_type = type(condition)
@@ -198,9 +200,9 @@ class DBManager:
             op = condition.op
             match op:
                 case BinaryOp.AND:
-                    return self.bitmap_and(self.select_condition(condition.left), self.select_condition(condition.right))
+                    return self.bitmap_and(self.select_condition(table_schema, condition.left), self.select_condition(table_schema, condition.right))
                 case BinaryOp.OR:
-                    return self.bitmap_or(self.select_condition(condition.left), self.select_condition(condition.right))
+                    return self.bitmap_or(self.select_condition(table_schema, condition.left), self.select_condition(table_schema, condition.right))
                 case BinaryOp.EQ: # Usa indices
                     index = self.get_index(table_schema, condition.left.column_name)
                     return self.list_to_bitmap(index.search(condition.right.value))
@@ -223,33 +225,14 @@ class DBManager:
             index = self.get_index(table_schema, condition.left.column_name)
             return self.list_to_bitmap(index.range_search(condition.mid.value, condition.right.value))
         elif condition_type == NotCondition:
-            return self.bitmap_not(self.select_condition(condition.condition))
+            return self.bitmap_not(self.select_condition(table_schema, condition.condition))
         elif condition_type == BooleanColumn: # Usa indices
             index = self.get_index(table_schema, condition.column_name)
             return self.list_to_bitmap(index.search(True))
         else:
             self.error("invalid condition")
-"""
-        def select(self, select_schema : SelectSchema) -> dict[str, list]:
-        table = self.get_table_schema(select_schema.table_name)
-        if select_schema.all: # SELECT *
-            return self.select_all(table)
-        record_file = RecordFile(table)
-        column_names = [column.name for column in table.columns]
-        nonexistent = [column for column in select_schema.column_list if column not in column_names]
-        if nonexistent:
-            self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
-        pos_list = self.select_condition(table, select_schema.condition)
-        result = {
-            'columns': column_names,
-            'records': [record_file.read(pos).values for pos in pos_list]
-        }
-        return result
-
-    def select_condition(self, table_schema : TableSchema, condition) -> list[int]:
-        # se espera solo retornar las posiciones de los registros que cumplen la condicion
-        pass
-"""
+    
+    """
     def select_all(self, tableSchema: TableSchema) -> dict[str, list]:
         primaryIndex = tableSchema.get_primary_index()
         record_file = RecordFile(tableSchema)
@@ -258,7 +241,8 @@ class DBManager:
             'records': [record_file.read(pos).values for pos in primaryIndex.getAll()]
         }
         return result
-
+    """
+    
     #------------------------ INSERT IMPLEMENTATION ----------------------------
 
     def insert(self, table_name:str, values: list):

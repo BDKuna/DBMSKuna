@@ -479,7 +479,7 @@ class Printer:
         raise PrintError(error)
 
     def print_line(self, line : str):
-        print(f"{" "*self.indent}{line}")
+        print(f"{' '*self.indent}{line}")
 
     def print(self, sql : SQL):
         try:
@@ -524,7 +524,7 @@ class Printer:
         if stmt.all:
             self.print_line("-> All (*)")
         else:
-            self.print_line(f"-> {", ".join(str(column) for column in stmt.column_list)}")
+            self.print_line(f"-> {', '.join(str(column) for column in stmt.column_list)}")
         self.indent -= 2
         self.print_condition_main(stmt.condition)
         self.indent -= 2
@@ -621,7 +621,7 @@ class Printer:
         self.indent -= 2
         self.print_line("-> Is primary key?:")
         self.indent += 2
-        self.print_line(f"-> {"Yes" if column_def.is_primary_key else "No"}")
+        self.print_line(f"-> {'Yes' if column_def.is_primary_key else 'No'}")
         self.indent -= 2
         self.print_line("-> Data type:")
         self.indent += 2
@@ -679,11 +679,11 @@ class Printer:
         if stmt.column_list:
             self.print_line("-> Into columns:")
             self.indent += 2
-            self.print_line(f"-> {", ".join(str(column) for column in stmt.column_list)}")
+            self.print_line(f"-> {', '.join(str(column) for column in stmt.column_list)}")
             self.indent -= 2
         self.print_line("-> Values:")
         self.indent += 2
-        self.print_line(f"-> {", ".join(str(value) for value in stmt.value_list)}")
+        self.print_line(f"-> {', '.join(str(value) for value in stmt.value_list)}")
         self.indent -= 4
 
     def print_delete_stmt(self, stmt : DeleteStmt):
@@ -725,7 +725,7 @@ class Printer:
         self.indent -= 2
         self.print_line("-> On columns:")
         self.indent += 2
-        self.print_line(f"-> {", ".join(str(column) for column in stmt.column_list)}")
+        self.print_line(f"-> {', '.join(str(column) for column in stmt.column_list)}")
         self.indent -= 4
 
     def print_drop_index_stmt(self, stmt : DropIndexStmt):
@@ -789,7 +789,7 @@ class Interpreter:
 
     def interpret_select_stmt(self, stmt : SelectStmt):
         select_schema = SelectSchema(stmt.table_name, ConditionSchema(stmt.condition), stmt.all, stmt.column_list)
-        self.dbmanager.select(select_schema)
+        print(self.dbmanager.select(select_schema))
 
     def interpret_create_table_stmt(self, stmt : CreateTableStmt):
         column_list = [Column(column_def.column_name, column_def.data_type, column_def.is_primary_key, column_def.index_type, column_def.varchar_limit) for column_def in stmt.column_def_list]
@@ -820,8 +820,8 @@ if __name__ == "__main__":
     scanner = Scanner(sys.argv[1])
     parser = Parser(scanner)
     sql = parser.parse()
-    printer = Printer()
-    printer.print(sql)
-    # interpreter = Interpreter()
-    # interpreter.interpret(sql)
+    #printer = Printer()
+    #printer.print(sql)
+    interpreter = Interpreter()
+    interpreter.interpret(sql)
 

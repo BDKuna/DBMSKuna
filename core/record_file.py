@@ -146,6 +146,14 @@ class RecordFile:
 			file.write(node.pack())
 			self.logger.writingRecord(self.filename, pos, node.record.values[0], node.next_del)
 
+	def max_id(self):
+		with open(self.filename, "rb") as file:
+			file.seek(0, os.SEEK_END)
+			size = file.tell()
+			if size == 0:
+				return 0
+			return (size - self.HEADER_SIZE) // self.node_size
+		
 	# ----- Public methods -----
 
 	def append(self, record: Record) -> int:

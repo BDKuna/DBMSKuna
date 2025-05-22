@@ -28,7 +28,7 @@ def query(q: Query):
 
     return {"Hello": "World"}
 
-
+"""
 @app.post("/sql/select_all/")
 def select_all(q: Query):
     db = DBManager()
@@ -41,3 +41,4 @@ def select_all(q: Query):
         'data': resultPagination,
         'total': len(result['records'])
     }
+"""
