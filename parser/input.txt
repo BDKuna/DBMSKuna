@@ -4,7 +4,7 @@
     producto VARCHAR(50) INDEX HASH,
     cantidad INT,
     precio FLOAT,
-    fecha DATE INDEX RTREE,
+    fecha VARCHAR(20) INDEX RTREE,
     cliente_id INT INDEX AVL
 );
 

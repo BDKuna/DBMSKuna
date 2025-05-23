@@ -4,7 +4,7 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 
 from fastapi import FastAPI
-from core.dbmanager import DBManager
+from parser import parser
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -25,20 +25,19 @@ class Query(BaseModel):
 
 @app.post("/sql/")
 def query(q: Query):
-
-    return {"Hello": "World"}
-
-"""
-@app.post("/sql/select_all/")
-def select_all(q: Query):
-    db = DBManager()
-    result = db.select_all(db.get_table_schema(q.query))
+    result, message = parser.execute_sql(q.query)
+    
     resultPagination = {
-        'columns': result['columns'],
-        'records': result['records'][q.offset : q.offset + q.limit]
+        'columns': [],
+        'records': []
     }
+    if result is not None:
+        resultPagination = {
+            'columns': result['columns'],
+            'records': result['records'][q.offset : q.offset + q.limit]
+        }
     return {
         'data': resultPagination,
-        'total': len(result['records'])
+        'total': len(result['records']),
+        'message': message
     }
-"""

@@ -30,14 +30,8 @@ class Token:
 
 
 class Scanner:
-    def __init__(self, filename):
-        try:
-            with open(filename, 'r') as f:
-                self.input = f.read() + '\0'
-        except FileNotFoundError:
-            print("No se pudo abrir el archivo")
-            sys.exit(1)
-
+    def __init__(self, input):
+        self.input = input + '\0'
         self.first = 0
         self.current = 0
         self.line = 1
