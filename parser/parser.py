@@ -130,6 +130,19 @@ class Parser:
     def is_at_end(self) -> bool:
         return self.current.type == Token.Type.END
 
+    def str_into_type(self, value, token : Token):
+        if token.type == Token.Type.NUMVAL:
+            return int(value)
+        elif token.type == Token.Type.FLOATVAL:
+            return float(value)
+        elif token.type == Token.Type.STRINGVAL:
+            return value
+        elif token.type == Token.Type.BOOLVAL:
+            if token.lexema == "TRUE":
+                return True
+            elif token.lexema == "FALSE":
+                return False
+
     def parse(self) -> SQL:
         try:
             self.current = self.scanner.next_token()
@@ -241,7 +254,7 @@ class Parser:
                     self.error("expected '(' after VARCHAR keyword")
                 if not self.match(Token.Type.NUMVAL):
                     self.error("expected number after '('")
-                column_definition.varchar_limit = self.previous.lexema
+                column_definition.varchar_limit = int(self.previous.lexema)
                 if not self.match(Token.Type.RPAR):
                     self.error("expected ')' after number")
             case "DATE":
@@ -314,11 +327,11 @@ class Parser:
             self.error("expected '(' after VALUES keyword")
         if not self.match_values():
             self.error("expected value after '('")
-        insert_stmt.add_value(self.previous.lexema)
+        insert_stmt.add_value(self.str_into_type(self.previous.lexema, self.previous))
         while self.match(Token.Type.COMMA):
             if not self.match_values():
                 self.error("expected value after comma")
-            insert_stmt.add_value(self.previous.lexema)
+            insert_stmt.add_value(self.str_into_type(self.previous.lexema, self.previous))
         if not self.match(Token.Type.RPAR):
             self.error("expected ')' after values")
         return insert_stmt
@@ -431,12 +444,12 @@ class Parser:
             between_condition.left = ConditionColumn(column_name)
             if not self.match_values():
                 self.error("expected a value after BETWEEN keyword")
-            between_condition.mid = ConditionValue(int(self.previous.lexema)) # TODO depende del tipo (en utils)
+            between_condition.mid = ConditionValue(self.str_into_type(self.previous.lexema, self.previous)) # TODO depende del tipo (en utils)
             if not self.match(Token.Type.AND):
                 self.error("expected AND keyword after value in BETWEEN clause")
             if not self.match_values():
                 self.error("expected a value after AND keyword y BETWEEN clause")
-            between_condition.right = ConditionValue(int(self.previous.lexema))
+            between_condition.right = ConditionValue(self.str_into_type(self.previous.lexema, self.previous))
             return between_condition
         simple_condition = BinaryCondition()
         simple_condition.left = ConditionColumn(column_name)
@@ -460,7 +473,7 @@ class Parser:
                 self.error("unknown conditional operator")
         if not self.match_values():
             self.error("expected a value after conditional operator")
-        simple_condition.right = ConditionValue(int(self.previous.lexema))
+        simple_condition.right = ConditionValue(self.str_into_type(self.previous.lexema, self.previous))
         return simple_condition
 
 
@@ -798,7 +811,7 @@ class Interpreter:
         self.dbmanager.drop_table(stmt.table_name)
 
     def interpret_insert_stmt(self, stmt : InsertStmt):
-        pass # TODO
+        self.dbmanager.insert(stmt.table_name, stmt.value_list, stmt.column_list)
 
     def interpret_delete_stmt(self, stmt : DeleteStmt):
         delete_schema = DeleteSchema(stmt.table_name, ConditionSchema(stmt.condition))
@@ -818,8 +831,8 @@ if __name__ == "__main__":
     scanner = Scanner(sys.argv[1])
     parser = Parser(scanner) # TODO parsear RTree
     sql = parser.parse()
-    #printer = Printer()
-    #printer.print(sql)
+    # printer = Printer()
+    # printer.print(sql)
     interpreter = Interpreter()
     interpreter.interpret(sql)
 

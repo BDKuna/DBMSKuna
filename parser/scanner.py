@@ -212,7 +212,7 @@ class Scanner:
                 if c == "'":
                     self.current += 1
                     self.pos += 1
-                    return Token(Token.Type.STRINGVAL, self.get_lexema())
+                    return Token(Token.Type.STRINGVAL, self.get_lexema()[1:-1])
                 elif c == '\0':
                     return Token(Token.Type.ERR)
 

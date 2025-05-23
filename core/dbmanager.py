@@ -7,6 +7,7 @@ if root_path not in sys.path:
 
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
 from core.schema import Column, DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
+from core import utils
 from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
@@ -162,6 +163,9 @@ class DBManager:
                 if column.is_primary:
                     if column.index_type == IndexType.NONE:
                         column.index_type = IndexType.HASH
+                if column.data_type == DataType.VARCHAR:
+                    if column.varchar_length == -1:
+                        self.error("Varchar length was not specified")
 
             self.save_table_schema(table_schema, path)
 
@@ -175,7 +179,7 @@ class DBManager:
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
-            self.logger.error("table doesn't exists")
+            self.logger.error("table doesn't exist")
             #self.error("table doesn't exist")
 
     #------------------------ SELECT IMPLEMENTATION ----------------------------
@@ -188,7 +192,11 @@ class DBManager:
             if nonexistent:
                 self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
         
-        bitmap = self.select_condition(table, select_schema.condition_schema.condition)
+        if select_schema.condition_schema.condition:
+            bitmap = self.select_condition(table, select_schema.condition_schema.condition)
+        else:
+            bitmap = bitarray(1)
+            bitmap.setall(1)
         result = self.retrieve_data(table, bitmap)
         if not select_schema.all:
             for record in result:
@@ -199,39 +207,71 @@ class DBManager:
             'records': [record.values for record in result]
         }
 
-    def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray: # TODO chequear tipado en comparaciones
+    def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray:
         condition_type = type(condition)
         if condition_type == BinaryCondition:
             op = condition.op
-            match op:
-                case BinaryOp.AND:
-                    return self.bitmap_and(self.select_condition(table_schema, condition.left), self.select_condition(table_schema, condition.right))
-                case BinaryOp.OR:
-                    return self.bitmap_or(self.select_condition(table_schema, condition.left), self.select_condition(table_schema, condition.right))
-                case BinaryOp.EQ: # Usa indices
-                    index = self.get_index(table_schema, condition.left.column_name)
-                    return self.list_to_bitmap(index.search(condition.right.value))
-                case BinaryOp.NEQ: # Usa indices
-                    index = self.get_index(table_schema, condition.left.column_name)
-                    return self.bitmap_not(self.list_to_bitmap(index.search(condition.right.value)))
-                case BinaryOp.LT: # Usa indices (menos hash)
-                    index = self.get_index(table_schema, condition.left.column_name)
-                    return self.bitmap_difference(self.list_to_bitmap(index.rangeSearch(None, condition.right.value)), self.list_to_bitmap(index.search(condition.right.value)))
-                case BinaryOp.GT: # Usa indices (menos hash)
-                    index = self.get_index(table_schema, condition.left.column_name)
-                    return self.bitmap_difference(self.list_to_bitmap(index.rangeSearch(condition.right.value, None)), self.list_to_bitmap(index.search(condition.right.value)))
-                case BinaryOp.LE: # Usa indices (menos hash)
-                    index = self.get_index(table_schema, condition.left.column_name)
-                    return self.list_to_bitmap(index.rangeSearch(None, condition.right.value))
-                case BinaryOp.GE: # Usa indices (menos hash)
-                    index = self.get_index(table_schema, condition.left.column_name)
-                    return self.list_to_bitmap(index.rangeSearch(condition.right.value, None))
+            if op in [BinaryOp.AND, BinaryOp.OR]:
+                match op:
+                    case BinaryOp.AND:
+                        return self.bitmap_and(self.select_condition(table_schema, condition.left), self.select_condition(table_schema, condition.right))
+                    case BinaryOp.OR:
+                        return self.bitmap_or(self.select_condition(table_schema, condition.left), self.select_condition(table_schema, condition.right))
+            else:
+                column = None
+                for i in table_schema.columns:
+                    if i.name == condition.left.column_name:
+                        column = i
+                        break
+                if not column:
+                    self.error(f"column '{condition.left.column_name}' doesn't exist in table '{table_schema.table_name}'")
+                if column.data_type != utils.get_data_type(condition.right.value):
+                    self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
+                match op:    
+                    case BinaryOp.EQ: # Usa indices
+                        index = self.get_index(table_schema, condition.left.column_name)
+                        return self.list_to_bitmap(index.search(condition.right.value))
+                    case BinaryOp.NEQ: # Usa indices
+                        index = self.get_index(table_schema, condition.left.column_name)
+                        return self.bitmap_not(self.list_to_bitmap(index.search(condition.right.value)))
+                    case BinaryOp.LT: # Usa indices (menos hash)
+                        index = self.get_index(table_schema, condition.left.column_name)
+                        return self.bitmap_difference(self.list_to_bitmap(index.rangeSearch(None, condition.right.value)), self.list_to_bitmap(index.search(condition.right.value)))
+                    case BinaryOp.GT: # Usa indices (menos hash)
+                        index = self.get_index(table_schema, condition.left.column_name)
+                        return self.bitmap_difference(self.list_to_bitmap(index.rangeSearch(condition.right.value, None)), self.list_to_bitmap(index.search(condition.right.value)))
+                    case BinaryOp.LE: # Usa indices (menos hash)
+                        index = self.get_index(table_schema, condition.left.column_name)
+                        return self.list_to_bitmap(index.rangeSearch(None, condition.right.value))
+                    case BinaryOp.GE: # Usa indices (menos hash)
+                        index = self.get_index(table_schema, condition.left.column_name)
+                        return self.list_to_bitmap(index.rangeSearch(condition.right.value, None))
         elif condition_type == BetweenCondition: # Usa indices (menos hash)
+            column = None
+            for i in table_schema.columns:
+                if i.name == condition.left.column_name:
+                    column = i
+                    break
+            if not column:
+                self.error(f"column '{condition.left.column_name}' doesn't exist in table '{table_schema.table_name}'")
+            if column.data_type != utils.get_data_type(condition.mid.value) or column.data_type != utils.get_data_type(condition.right.value):
+                self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
             index = self.get_index(table_schema, condition.left.column_name)
             return self.list_to_bitmap(index.rangeSearch(condition.mid.value, condition.right.value))
         elif condition_type == NotCondition:
             return self.bitmap_not(self.select_condition(table_schema, condition.condition))
         elif condition_type == BooleanColumn: # Usa indices
+            column = None
+            for i in table_schema.columns:
+                if i.name == condition.column_name:
+                    column = i
+                    break
+            if not column:
+                self.error(f"column '{condition.column_name}' doesn't exist in table '{table_schema.table_name}'")
+            if column.data_type != DataType.BOOL:
+                self.error(f"column '{condition.column_name}' is not of data type {DataType.BOOL}")
+            if DataType.BOOL != utils.get_data_type(condition.right.value):
+                self.error(f"value '{condition.right.value}' is not of data type {DataType.BOOL}")
             index = self.get_index(table_schema, condition.column_name)
             return self.list_to_bitmap(index.search(True))
         else:
@@ -250,11 +290,25 @@ class DBManager:
     
     #------------------------ INSERT IMPLEMENTATION ----------------------------
 
-    def insert(self, table_name:str, values: list):
+    def insert(self, table_name:str, values: list, columns: list):
         tableSchema: TableSchema = self.get_table_schema(table_name)
+        table_columns = [column.name for column in tableSchema.columns]
+
+        if columns and sorted(columns) != sorted(table_columns):
+            self.error("The specificed columns don't match the table's columns")
+
         if len(values) != len(tableSchema.columns):
-            raise Exception("El número de valores no coincide con el número de columnas")
-        record = Record(tableSchema, values)
+            self.error("The number of values doesn't match the number of columns")
+        
+        if columns:
+            data_dict = dict(zip(columns, values))
+            reordered_values = [data_dict[col] for col in table_columns]
+        else:
+            reordered_values = values
+
+        print(reordered_values)
+
+        record = Record(tableSchema, reordered_values)
         record_file = RecordFile(tableSchema)
         pos = record_file.append(record)
 
@@ -275,7 +329,6 @@ class DBManager:
                 index.delete(value)
 
     def create_index(self, table_name : str, index_name : str, columns : list[str], index_type : IndexType = IndexType.BTREE):
-        #trae schema, cambia index y guarda schema
         if len(columns) > 1:
             self.error(f"Index on more than one column not supported")
         column_name = columns[0]
@@ -291,23 +344,24 @@ class DBManager:
             self.error(f"column already has an index")
 
         column.index_type = index_type
+        column.index_name = index_name
 
-        self.get_index(table_name, column_name)
+        self.get_index(table_schema, column_name)
 
         path = f"{self.tables_path}/{table_name}"
         self.save_table_schema(table_schema, path)
 
-    def drop_index(self, table_name : str, column_name : str) -> None:
-        # TODO deberia pedir index_name, no column_name. Hay que cambiar el objeto column para que guarde tambien el nombre de indice
+    def drop_index(self, table_name : str, index_name : str) -> None:
         table_schema = self.get_table_schema(table_name)
         for column in table_schema.columns:
-            if column.name == column_name:
-                index = self.get_index(table_schema, column_name)
+            if column.index_name == index_name:
+                index = self.get_index(table_schema, column.name)
                 index.clear()
                 column.index_type = IndexType.NONE
                 path = f"{self.tables_path}/{table_schema.table_name}"
                 self.save_table_schema(table_schema, path)
                 return
+        self.error(f"Index with name '{index_name}' on table '{table_name}' doesn't exist")
               
 def test():
     dbmanager = DBManager()
