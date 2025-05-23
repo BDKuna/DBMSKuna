@@ -21,5 +21,19 @@ CREATE INDEX idx_fecha ON ventas USING RTREE(fecha);
 DROP INDEX idx_fecha ON ventas;
 DELETE FROM ventas WHERE fecha < '2023-01-01';*/
 
-select id, nombre from productos
-where not id != 6
+--DROP TABLE alumnos;
+
+/*CREATE TABLE alumnos (
+  codigo INT PRIMARY KEY INDEX HASH,
+  nombre VARCHAR(20) INDEX BTREE,
+  ciclo INT INDEX BTREE
+);*/
+
+SELECT * FROM alumnos WHERE ciclo = 5;
+
+/*
+CREATE TABLE test (
+  col1 INT PRIMARY KEY INDEX BTREE,
+  col2 FLOAT
+);
+*/

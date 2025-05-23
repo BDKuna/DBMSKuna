@@ -13,6 +13,9 @@ class DataType(Enum):
     DATE = auto()
     BOOL = auto()
 
+    def __str__(self):
+        return self.name
+
 class IndexType(Enum):
     AVL = auto()
     ISAM = auto()
@@ -22,12 +25,16 @@ class IndexType(Enum):
     SEQ = auto()
     NONE = auto()
 
+    def __str__(self):
+        return self.name
+
 class Column:
-    def __init__(self, name, data_type : DataType, is_primary = False, index_type = IndexType.NONE, varchar_length = -1):
+    def __init__(self, name, data_type : DataType, is_primary = False, index_type = IndexType.NONE, varchar_length = -1, index_name = None):
         self.name = name
         self.data_type = data_type
         self.is_primary = is_primary
         self.index_type = index_type
+        self.index_name = index_name
         self.varchar_length = varchar_length
 
 class TableSchema:

@@ -4,7 +4,6 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 from core.schema import DataType, Column
 
-
 def calculate_record_format(columns: list[Column]):
     fmt = ""
     for col in columns:
@@ -19,6 +18,16 @@ def calculate_record_format(columns: list[Column]):
         else:
             raise NotImplementedError(f"Unsupported type {col.data_type}")
     return fmt
+
+def get_data_type(value) -> DataType:
+    if isinstance(value, int):
+        return DataType.INT
+    elif isinstance(value, float):
+        return DataType.FLOAT
+    elif isinstance(value, bool):
+        return DataType.BOOL
+    elif isinstance(value, str):
+        return DataType.VARCHAR
 
 def get_empty_value(column: Column):
     if column.data_type == DataType.INT:
