@@ -12,6 +12,7 @@ from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
+from indices.isam import ISAM_Index
 from core.record_file import Record, RecordFile
 import logger
 
@@ -49,7 +50,7 @@ class DBManager:
                         index = AVLTree(table_schema, column)
                         pass
                     case IndexType.ISAM:
-                        # index = ISAM(table_schema, column)
+                        index = ISAM_Index(table_schema, column)
                         pass
                     case IndexType.HASH:
                         index = ExtendibleHashTree(table_schema, column)
