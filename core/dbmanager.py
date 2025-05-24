@@ -12,7 +12,9 @@ from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
+from indices.ISAMtree import ISAMIndex
 from indices.noindex import NoIndex
+
 from core.record_file import Record, RecordFile
 import logger
 
@@ -50,7 +52,8 @@ class DBManager:
                         index = AVLTree(table_schema, column)
                         pass
                     case IndexType.ISAM:
-                        # index = ISAM(table_schema, column)
+                        index = ISAMIndex(table_schema, column)
+                        index.build_index()
                         pass
                     case IndexType.HASH:
                         index = ExtendibleHashTree(table_schema, column)
@@ -405,4 +408,51 @@ def test():
     """
     assert 1==1
 
-# test()
+def test_isam():
+    from core.dbmanager import DBManager
+    from core.schema import DataType, IndexType
+    import schemabuilder
+
+    db = DBManager()
+
+    # 1) Define a schema named "test_generic_isam" with an ISAM index on 'key'
+    builder = schemabuilder.TableSchemaBuilder()
+    builder.set_name("test_generic_isam")
+    builder.add_column(name="key",   data_type=DataType.INT,     is_primary_key=True,  index_type=IndexType.ISAM)
+    builder.add_column(name="value", data_type=DataType.INT,     is_primary_key=False)
+    builder.add_column(name="tag",   data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=10)
+    schema = builder.get()
+
+    # 2) (Re)create the table from scratch
+    db.drop_table(schema.table_name)
+    db.create_table(schema)
+
+    # Prepare the list of column names (must match the schema exactly)
+    col_names = [col.name for col in schema.columns]
+
+    # 3) Insert some test records: (key, value, tag)
+    examples = [
+        (1, 100, "A"),
+        (2, 200, "B"),
+        (3, 150, "C"),
+        (4, 250, "D"),
+        (5,  50, "E")
+    ]
+    for key, val, tag in examples:
+        db.insert(schema.table_name, [key, val, tag], col_names)  # <-- include col_names
+
+    # 4) Retrieve the ISAM index and exercise search & rangeSearch
+    isam_index = db.get_index(schema, "key")
+    print("search(3):",        isam_index.search(3))
+    print("rangeSearch(2, 4):", isam_index.rangeSearch(2, 4))
+
+    print(isam_index)
+
+    # 5) Verify behavior with simple assertions
+    assert isam_index.search(3) == [3]
+    assert sorted(isam_index.rangeSearch(2, 4)) == [2, 3, 4]
+
+    print("✔ ISAM index tests passed!")
+
+if __name__ == "__main__":
+    test_isam()
