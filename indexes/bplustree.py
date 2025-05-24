@@ -212,7 +212,7 @@ class BPlusTree:
 		self.logger = logger.CustomLogger(f"BPLUSTREE-{schema.table_name}-{column.name}".upper())
 	
 	def insert(self, pos:int, val:any):
-		self.logger.warning(f"INSERT record with id: {val}")
+		self.logger.warning(f"INSERTING: {val}")
 
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
@@ -318,8 +318,8 @@ class BPlusTree:
 		self.printBuckets()
 		return pointers
 	
-	def search(self, key) -> list[int]:
-		self.logger.warning(f"SEARCH record with id: {key}")
+	def search(self, key:any) -> list[int]:
+		self.logger.warning(f"SEARCHING: {key}")
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
 			self.logger.fileIsEmpty(self.indexFile.filename)
@@ -328,15 +328,18 @@ class BPlusTree:
 
 		return self.rangeSearchAux(key, key)
 
-	def rangeSearch(self, ini, end) -> list[int]:
-		self.logger.warning(f"init: {ini}, end: {end}")
+	def rangeSearch(self, ini:any, end:any) -> list[int]:
 		if(ini == None):
 			ini = utils.get_min_value(self.column)
 		if(end == None):
 			end = utils.get_max_value(self.column)
-		self.logger.warning(f"RANGE SEARCH records in range start: {ini} and end: {end}")
+		self.logger.warning(f"RANGE-SEARCH: {ini}, {end}")
 
 		return self.rangeSearchAux(ini, end)
+	
+	def delete(self, key:any):
+		self.logger.warning(f"DELETING: {key}")
+		pass
 		
 	def rangeSearchAux(self, ini, end) -> list[int]:
 		rootPos = self.indexFile.getHeader()

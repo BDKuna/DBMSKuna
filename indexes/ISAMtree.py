@@ -773,7 +773,8 @@ class ISAMIndex:
             ini = utils.get_min_value(self.column)
         if(end == None):
             end = utils.get_max_value(self.column)
-        
+        self.logger.warning(f"RANGE-SEARCH: {ini}, {end}")
+
         results = []
         if end < ini:
             return results
@@ -805,6 +806,7 @@ class ISAMIndex:
         return results
 
     def search(self, key) -> list[int]:
+        self.logger.warning(f"SEARCHING: {key}")
         """
         Búsqueda puntual: sólo devuelve los datapos de los registros con key == key.
         Internamente llama a range_search(key, key).
@@ -821,6 +823,7 @@ class ISAMIndex:
            • Si existe overflow y tiene hueco, merge en dos páginas.
            • Si no, crear un overflow simple.
         """
+        self.logger.warning(f"INSERTING: {key}")
         lf = self.file.leaf_factor
         empty_key = utils.get_empty_value(self.column)
 
@@ -928,7 +931,8 @@ class ISAMIndex:
 
         print(f"Overflow simple: hoja {dest} → nueva hoja {new_leaf_id}")
 
-    def delete(self, key: int):
+    def delete(self, key: any):
+        self.logger.warning(f"DELETING: {key}")
         lf = self.file.leaf_factor
 
         # 1) Bajar Root → Nivel1 → first candidate
@@ -1052,6 +1056,7 @@ class ISAMIndex:
         print(f"Eliminado id={key} entre hojas {first}..{last}")
 
     def getAll(self) -> list[int]:
+        self.logger.warning(f"GET ALL RECORDS")
         return self.rangeSearch(utils.get_min_value(self.column), utils.get_max_value(self.column))
 
     def clear(self):

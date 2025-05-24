@@ -1,11 +1,9 @@
-import struct
 import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import logger
-from core.schema import TableSchema, Column, DataType, IndexType
+from core.schema import TableSchema, Column
 from core import utils
 from core.record_file import RecordFile
 
@@ -18,11 +16,7 @@ class NoIndex:
 			if i == column:
 				self.value_pos = pos
 				break
-			
-		# self.indexFile = BPlusFile(schema, column)
-		# self.BLOCK_FACTOR = NodeBPlus.BLOCK_FACTOR
-		# self.logger = logger.CustomLogger(f"BPLUSTREE-{schema.table_name}-{column.name}".upper())
-	
+				
 	def insert(self, pos : int, val : any):
 		pass
 	

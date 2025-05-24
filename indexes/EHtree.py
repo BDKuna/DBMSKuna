@@ -260,6 +260,7 @@ class ExtendibleHashTree:
         pointer = posición física en el data file,
         key     = valor de la columna a indexar.
         """
+        self.logger.warning(f"INSERTING: {key}")
         rec  = Record(key, pointer)
         bits = self._hash_bits(key)
         leaf = self._find_leaf_node(bits)
@@ -319,6 +320,7 @@ class ExtendibleHashTree:
         """
         Igualdad exacta; devuelve lista (vacía o con un solo ptr).
         """
+        self.logger.warning(f"SEARCHING: {key}")
         bits = self._hash_bits(key)
         leaf = self._find_leaf_node(bits)
         r    = self.fm.load_bucket(leaf.bucket_id).search(key)
@@ -328,10 +330,12 @@ class ExtendibleHashTree:
         """
         Busca todos los registros con lo <= key <= hi.
         """
+
         if(lo == None):
             lo = utils.get_min_value(self.column)
         if(hi == None):
             hi = utils.get_max_value(self.column)
+        self.logger.warning(f"RANGE-SEARCH: {lo}, {hi}")
         out = []
         # recorro todos y filtro en memoria:
         for rec in self.get_all():
@@ -343,6 +347,7 @@ class ExtendibleHashTree:
         """
         Elimina (key) si existe. No reequilibra profundidad de árbol.
         """
+        self.logger.warning(f"DELETING: {key}")
         bits = self._hash_bits(key)
         leaf = self._find_leaf_node(bits)
         b    = self.fm.load_bucket(leaf.bucket_id)
@@ -372,6 +377,7 @@ class ExtendibleHashTree:
         """
         Devuelve todos los punteros en orden de clave ascendente.
         """
+        self.logger.warning(f"GET ALL RECORDS")
         recs = []
         def dfs(n: TreeNode):
             if n.is_leaf():

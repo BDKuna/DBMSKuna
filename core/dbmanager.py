@@ -6,14 +6,14 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
-from core.schema import Column, DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
+from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
 from core import utils
-from indices.bplustree import BPlusTree
-from indices.avltree import AVLTree
-from indices.EHtree import ExtendibleHashTree
-from indices.Rtree import RTreeIndex
-from indices.ISAMtree import ISAMIndex
-from indices.noindex import NoIndex
+from indexes.bplustree import BPlusTree
+from indexes.avltree import AVLTree
+from indexes.EHtree import ExtendibleHashTree
+from indexes.Rtree import RTreeIndex
+from indexes.ISAMtree import ISAMIndex
+from indexes.noindex import NoIndex
 
 from core.record_file import Record, RecordFile
 import logger
@@ -231,25 +231,25 @@ class DBManager:
                 if column.data_type != utils.get_data_type(condition.right.value):
                     self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
                 match op:    
-                    case BinaryOp.EQ: # Usa indices
+                    case BinaryOp.EQ: # Usa indexes
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.list_to_bitmap(index.search(condition.right.value))
-                    case BinaryOp.NEQ: # Usa indices
+                    case BinaryOp.NEQ: # Usa indexes
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.bitmap_not(self.list_to_bitmap(index.search(condition.right.value)))
-                    case BinaryOp.LT: # Usa indices (menos hash)
+                    case BinaryOp.LT: # Usa indexes (menos hash)
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.bitmap_difference(self.list_to_bitmap(index.rangeSearch(None, condition.right.value)), self.list_to_bitmap(index.search(condition.right.value)))
-                    case BinaryOp.GT: # Usa indices (menos hash)
+                    case BinaryOp.GT: # Usa indexes (menos hash)
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.bitmap_difference(self.list_to_bitmap(index.rangeSearch(condition.right.value, None)), self.list_to_bitmap(index.search(condition.right.value)))
-                    case BinaryOp.LE: # Usa indices (menos hash)
+                    case BinaryOp.LE: # Usa indexes (menos hash)
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.list_to_bitmap(index.rangeSearch(None, condition.right.value))
-                    case BinaryOp.GE: # Usa indices (menos hash)
+                    case BinaryOp.GE: # Usa indexes (menos hash)
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.list_to_bitmap(index.rangeSearch(condition.right.value, None))
-        elif condition_type == BetweenCondition: # Usa indices (menos hash)
+        elif condition_type == BetweenCondition: # Usa indexes (menos hash)
             column = None
             for i in table_schema.columns:
                 if i.name == condition.left.column_name:
@@ -263,7 +263,7 @@ class DBManager:
             return self.list_to_bitmap(index.rangeSearch(condition.mid.value, condition.right.value))
         elif condition_type == NotCondition:
             return self.bitmap_not(self.select_condition(table_schema, condition.condition))
-        elif condition_type == BooleanColumn: # Usa indices
+        elif condition_type == BooleanColumn: # Usa indexes
             column = None
             for i in table_schema.columns:
                 if i.name == condition.column_name:
@@ -310,7 +310,7 @@ class DBManager:
 
         indexes = tableSchema.get_indexes()
 
-        #insertar los indices
+        #insertar los indexes
         for i, index in enumerate(indexes.keys()):
             if indexes[index] is not None:
                 indexes[index].insert(pos, record.values[i])
@@ -358,101 +358,3 @@ class DBManager:
                 self.save_table_schema(table_schema, path)
                 return
         self.error(f"Index with name '{index_name}' on table '{table_name}' doesn't exist")
-              
-def test():
-    dbmanager = DBManager()
-    import schemabuilder
-    builder = schemabuilder.TableSchemaBuilder()
-    builder.set_name("productos")
-    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=True, index_type=IndexType.BTREE)
-    builder.add_column(name="nombre", data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=20)
-    schema:TableSchema = builder.get()
-    
-    dbmanager.drop_table("productos")
-    dbmanager.create_table(schema)
-    read_schema = dbmanager.get_table_schema("productos")
-
-    dbmanager.insert(read_schema.table_name, [4, "Sergod2"])
-    dbmanager.insert(read_schema.table_name, [6, "Paca"])
-    dbmanager.insert(read_schema.table_name, [2, "Sergod5"])
-    dbmanager.insert(read_schema.table_name, [5, "Sergod3"])
-    dbmanager.insert(read_schema.table_name, [8, "Sergod1"])
-    dbmanager.insert(read_schema.table_name, [7, "Eduardo"])
-    dbmanager.insert(read_schema.table_name, [40, "Hola"])
-    dbmanager.insert(read_schema.table_name, [11, "Sergod4"])
-    dbmanager.insert(read_schema.table_name, [3, "Sergod6"])
-    dbmanager.insert(read_schema.table_name, [9, "Buenas tardes"])
-    indexes = schema.get_indexes()
-    for index in indexes.keys():
-        if indexes[index] is not None:
-            print(indexes[index])
-    
-
-    btree = BPlusTree(schema, Column("id", DataType.INT, True, IndexType.BTREE))
-    print(btree.search(2))
-    """
-    select_schema = SelectSchema(schema.table_name,all=True)
-    print(dbmanager.select(select_schema))
-
-    btree = BPlusTree(schema, Column("nombre", DataType.VARCHAR, True, IndexType.BTREE, varchar_length=20))
-    print(btree.rangeSearch("Sergod", "Sergod9"))
-    print(btree.search("Paca"))
-    print(btree.search("Sergod5"))
-    print(btree.search("Sergod3"))
-    print(btree.search("Eduardo"))
-    print(btree.search("Hola"))
-    print(btree.search("Sergod4"))
-    print(btree.search("Sergod6"))
-    print(btree.search("Buenas tardes"))
-    print(btree.search("ONO"))
-    """
-    assert 1==1
-
-def test_isam():
-    from core.dbmanager import DBManager
-    from core.schema import DataType, IndexType
-    import schemabuilder
-
-    db = DBManager()
-
-    # 1) Define a schema named "test_generic_isam" with an ISAM index on 'key'
-    builder = schemabuilder.TableSchemaBuilder()
-    builder.set_name("test_generic_isam")
-    builder.add_column(name="key",   data_type=DataType.INT,     is_primary_key=True,  index_type=IndexType.ISAM)
-    builder.add_column(name="value", data_type=DataType.INT,     is_primary_key=False)
-    builder.add_column(name="tag",   data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=10)
-    schema = builder.get()
-
-    # 2) (Re)create the table from scratch
-    db.drop_table(schema.table_name)
-    db.create_table(schema)
-
-    # Prepare the list of column names (must match the schema exactly)
-    col_names = [col.name for col in schema.columns]
-
-    # 3) Insert some test records: (key, value, tag)
-    examples = [
-        (1, 100, "A"),
-        (2, 200, "B"),
-        (3, 150, "C"),
-        (4, 250, "D"),
-        (5,  50, "E")
-    ]
-    for key, val, tag in examples:
-        db.insert(schema.table_name, [key, val, tag], col_names)  # <-- include col_names
-
-    # 4) Retrieve the ISAM index and exercise search & rangeSearch
-    isam_index = db.get_index(schema, "key")
-    print("search(3):",        isam_index.search(3))
-    print("rangeSearch(2, 4):", isam_index.rangeSearch(2, 4))
-
-    print(isam_index)
-
-    # 5) Verify behavior with simple assertions
-    assert isam_index.search(3) == [3]
-    assert sorted(isam_index.rangeSearch(2, 4)) == [2, 3, 4]
-
-    print("✔ ISAM index tests passed!")
-
-if __name__ == "__main__":
-    test_isam()
