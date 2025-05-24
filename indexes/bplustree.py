@@ -142,7 +142,7 @@ class BPlusFile:
 		self.filename = utils.get_index_file_path(schema.table_name, column.name, IndexType.BTREE)
 		self.logger = logger.CustomLogger(f"BPLUSFILE-{schema.table_name}-{column.name}".upper())
 		
-		self.NODE_SIZE = struct.calcsize(utils.calculate_column_format(column) * NodeBPlus.BLOCK_FACTOR + "i" * (NodeBPlus.BLOCK_FACTOR + 1) + "iii")
+		self.NODE_SIZE = struct.calcsize("<" + (utils.calculate_column_format(column) * NodeBPlus.BLOCK_FACTOR) + ("i" * (NodeBPlus.BLOCK_FACTOR + 1)) + "iii")
 		#self.logger.logger.setLevel(logging.WARNING)
 
 		if not os.path.exists(self.filename):
