@@ -64,19 +64,19 @@ class TableSchema:
         index_type = column.index_type
         match index_type:
             case IndexType.AVL:
-                from indices.avltree import AVLTree
+                from indexes.avltree import AVLTree
                 return AVLTree(self, column)
             case IndexType.ISAM:
-                pass
-                # ISAM(table_schema, column)
+                from indexes.ISAMtree import ISAMIndex
+                return ISAMIndex(self, column)
             case IndexType.HASH:
-                from indices.EHtree import ExtendibleHashTree
+                from indexes.EHtree import ExtendibleHashTree
                 return ExtendibleHashTree(self, column)
             case IndexType.BTREE:
-                from indices.bplustree import BPlusTree
+                from indexes.bplustree import BPlusTree
                 return BPlusTree(self, column)
             case IndexType.RTREE:
-                from indices.Rtree import RTreeIndex
+                from indexes.Rtree import RTreeIndex
                 return RTreeIndex(self, column)
             case IndexType.SEQ:
                 pass

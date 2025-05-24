@@ -1,6 +1,6 @@
 from core.schema import Column, DataType, TableSchema, IndexType
 from core.record_file import Record, RecordFile
-from indices.avltree import AVLTree
+from indexes.avltree import AVLTree
 
 class miniManager:
     def __init__(self, schema: TableSchema):
@@ -38,7 +38,7 @@ class miniManager:
             raise Exception("El número de valores no coincide con el número de columnas")
         record = Record(self.schema, values)
         pos = self.record_file.append(record)
-        #insertar los indices
+        #insertar los indexes
         for index in self.indexes.keys():
             if self.indexes[index] is not None:
                 self.indexes[index].insert(record, pos)

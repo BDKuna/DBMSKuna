@@ -1,4 +1,4 @@
-import importlib, subprocess, sys
+import subprocess, sys
 import os
 
 # Intentar instalar e importar Rtree
