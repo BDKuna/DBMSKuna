@@ -16,7 +16,7 @@ class NodeBPlus:
 		if keys is None:
 			keys = []
 		self.column = column
-		self.FORMAT = utils.calculate_column_format(column) * self.BLOCK_FACTOR + "i" * (self.BLOCK_FACTOR + 1) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
+		self.FORMAT = "<" + str(utils.calculate_column_format(column) * self.BLOCK_FACTOR) + str("i" * (self.BLOCK_FACTOR + 1)) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
 		self.NODE_SIZE = struct.calcsize(self.FORMAT)
 		if isLeaf:
 			if len(pointers) != len(keys):
