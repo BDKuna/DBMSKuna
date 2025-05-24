@@ -21,7 +21,7 @@ INSERT INTO ventas VALUES (3, 'Teclado', 3, 45.00, '2024-02-05');
 
 SELECT producto, cantidad, precio FROM ventas
 WHERE (precio > 100.0 AND cantidad >= 2)
-  OR (fecha BETWEEN '2024-01-01' AND '2024-12-31' AND cliente_id != 47)
+  OR (fecha BETWEEN '2024-01-01' AND '2024-12-31')
   AND NOT producto = 'Mouse';
 
 CREATE INDEX idx_fecha ON ventas USING RTREE(fecha);
