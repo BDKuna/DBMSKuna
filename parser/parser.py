@@ -2,7 +2,7 @@ import os, sys
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
-from scanner import Token, Scanner
+from parser.scanner import Token, Scanner
 from core.conditionschema import BinaryOp, Condition, ConditionColumn, ConditionValue, NotCondition, BinaryCondition, BetweenCondition, BooleanColumn
 from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column
 from core.dbmanager import DBManager
@@ -95,6 +95,7 @@ class SQL:
 class ParseError(Exception):
     def __init__(self, error : str, line : int, pos : int, token : Token):
         self.error = f"Parse error: {error} (at line {line} position {pos} with token {token})"
+        print(self.error)
         super().__init__(self.error)
 
 class Parser:
@@ -148,7 +149,7 @@ class Parser:
             self.current = self.scanner.next_token()
             return self.parse_sql()
         except ParseError as e:
-            print(e.error)
+            raise e
 
     # <sql> ::= <statement_list>
     # <statement_list> ::= <statement> ";" { <statement> ";" }
@@ -757,6 +758,7 @@ class Printer:
 class RuntimeError(Exception):
     def __init__(self, error : str):
         self.error = f"Runtime error: {error}"
+        print(self.error)
         super().__init__(self.error)
 
 
@@ -769,38 +771,44 @@ class Interpreter:
     
     def interpret(self, sql : SQL):
         try:
-            self.interpret_sql(sql)
+            return self.interpret_sql(sql)
         except RuntimeError as e:
-            print(e.error)
+            raise e
 
     def interpret_sql(self, sql : SQL):
         if not sql:
-            self.error("Invalid sql")
+            self.error("Invalid SQL")
         for stmt in sql.stmt_list:
-            self.interpret_stmt(stmt)
+            return self.interpret_stmt(stmt)
 
     def interpret_stmt(self, stmt : Stmt):
         stmt_type = type(stmt)
         if stmt_type == SelectStmt:
-            self.interpret_select_stmt(stmt)
+            return self.interpret_select_stmt(stmt), "Selection successfull."
         elif stmt_type == CreateTableStmt:
             self.interpret_create_table_stmt(stmt)
+            return None, "Table created successfully."
         elif stmt_type == DropTableStmt:
             self.interpret_drop_table_stmt(stmt)
+            return None, "Table dropped successfully."
         elif stmt_type == InsertStmt:
             self.interpret_insert_stmt(stmt)
+            return None, "Insertion successful"
         elif stmt_type == DeleteStmt:
             self.interpret_delete_stmt(stmt)
+            return None, "Deletion successful"
         elif stmt_type == CreateIndexStmt:
             self.interpret_create_index_stmt(stmt)
+            return None, "Index created successfully."
         elif stmt_type == DropIndexStmt:
             self.interpret_drop_index_stmt(stmt)
+            return None, "Index dropped successfully."
         else:
             self.error("unknown statement type")
 
     def interpret_select_stmt(self, stmt : SelectStmt):
         select_schema = SelectSchema(stmt.table_name, ConditionSchema(stmt.condition), stmt.all, stmt.column_list)
-        print(self.dbmanager.select(select_schema))
+        return self.dbmanager.select(select_schema)
 
     def interpret_create_table_stmt(self, stmt : CreateTableStmt):
         column_list = [Column(column_def.column_name, column_def.data_type, column_def.is_primary_key, column_def.index_type, column_def.varchar_limit) for column_def in stmt.column_def_list]
@@ -823,16 +831,18 @@ class Interpreter:
     def interpret_drop_index_stmt(self, stmt : DropIndexStmt):
         self.dbmanager.drop_index(stmt.table_name, stmt.index_name)
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Incorrect number of arguments")
-        sys.exit(1)
 
-    scanner = Scanner(sys.argv[1])
-    parser = Parser(scanner) # TODO parsear RTree
-    sql = parser.parse()
-    # printer = Printer()
-    # printer.print(sql)
-    interpreter = Interpreter()
-    interpreter.interpret(sql)
+def execute_sql(sql:str):
+    scanner = Scanner(sql)
+    try:
+        parser = Parser(scanner)
+        sql_parse = parser.parse()
+    except ParseError as e:
+        return None, str(e)
+
+    try:
+        interpreter = Interpreter()
+        return interpreter.interpret(sql_parse)  # (result, message)
+    except RuntimeError as e:
+        return None, str(e)
 

@@ -13,6 +13,8 @@ from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
 from indices.ISAMtree import ISAMIndex
+from indices.noindex import NoIndex
+
 from core.record_file import Record, RecordFile
 import logger
 
@@ -62,7 +64,7 @@ class DBManager:
                         index = RTreeIndex(table_schema, column)
                         pass
                     case IndexType.NONE:
-                        # index = NoIndex(table_schema, column)
+                        index = NoIndex(table_schema, column)
                         pass
                     case _:
                         pass
@@ -181,8 +183,7 @@ class DBManager:
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
-            self.logger.error("table doesn't exist")
-            #self.error("table doesn't exist")
+            self.error("table doesn't exist")
 
     #------------------------ SELECT IMPLEMENTATION ----------------------------
 
@@ -278,18 +279,7 @@ class DBManager:
             return self.list_to_bitmap(index.search(True))
         else:
             self.error("invalid condition")
-    
-    """
-    def select_all(self, tableSchema: TableSchema) -> dict[str, list]:
-        primaryIndex = tableSchema.get_primary_index()
-        record_file = RecordFile(tableSchema)
-        result = {
-            'columns': [i.name for i in tableSchema.columns],
-            'records': [record_file.read(pos).values for pos in primaryIndex.getAll()]
-        }
-        return result
-    """
-    
+        
     #------------------------ INSERT IMPLEMENTATION ----------------------------
 
     def insert(self, table_name:str, values: list, columns: list):
@@ -301,14 +291,18 @@ class DBManager:
 
         if len(values) != len(tableSchema.columns):
             self.error("The number of values doesn't match the number of columns")
-        
+
         if columns:
             data_dict = dict(zip(columns, values))
             reordered_values = [data_dict[col] for col in table_columns]
         else:
             reordered_values = values
 
-        print(reordered_values)
+        # print(reordered_values)
+
+        for i, value in enumerate(reordered_values):
+            if tableSchema.columns[i].data_type != utils.get_data_type(value):
+                self.error(f"value '{value}' is not of data type {tableSchema.columns[i].data_type}")
 
         record = Record(tableSchema, reordered_values)
         record_file = RecordFile(tableSchema)
