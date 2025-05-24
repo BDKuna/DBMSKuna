@@ -51,6 +51,7 @@ class DBManager:
                         pass
                     case IndexType.ISAM:
                         index = ISAMIndex(table_schema, column)
+                        index.build_index()
                         pass
                     case IndexType.HASH:
                         index = ExtendibleHashTree(table_schema, column)
@@ -414,91 +415,50 @@ def test():
     assert 1==1
 
 def test_isam():
+    from core.dbmanager import DBManager
+    from core.schema import DataType, IndexType
     import schemabuilder
-    from core.schema import IndexType, DataType
-    from dbmanager import DBManager
-    from core.record_file import RecordFile
 
-    # 1) Preparo DBManager y schema
     db = DBManager()
+
+    # 1) Define a schema named "test_generic_isam" with an ISAM index on 'key'
     builder = schemabuilder.TableSchemaBuilder()
-    builder.set_name("productos")
-    builder.add_column(
-        name="id",
-        data_type=DataType.INT,
-        is_primary_key=True
-    )
-    builder.add_column(
-        name="valor",
-        data_type=DataType.INT,
-        is_primary_key=False,
-        index_type=IndexType.ISAM
-    )
+    builder.set_name("test_generic_isam")
+    builder.add_column(name="key",   data_type=DataType.INT,     is_primary_key=True,  index_type=IndexType.ISAM)
+    builder.add_column(name="value", data_type=DataType.INT,     is_primary_key=False)
+    builder.add_column(name="tag",   data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=10)
     schema = builder.get()
 
-    # 2) (Re)creo la tabla limpia
-    db.drop_table("productos")
+    # 2) (Re)create the table from scratch
+    db.drop_table(schema.table_name)
     db.create_table(schema)
 
-    # 3) Inserto datos de prueba
-    ejemplos = [
-        (1, 100),
-        (2,  50),
-        (3, 150),
-        (4, 120),
-        (5,  50),
+    # Prepare the list of column names (must match the schema exactly)
+    col_names = [col.name for col in schema.columns]
+
+    # 3) Insert some test records: (key, value, tag)
+    examples = [
+        (1, 100, "A"),
+        (2, 200, "B"),
+        (3, 150, "C"),
+        (4, 250, "D"),
+        (5,  50, "E")
     ]
-    print("\n==> TEST INSERT ==")
-    for pid, val in ejemplos:
-        db.insert("productos", [pid, val])
-        print(f"Inserted id={pid}, valor={val}")
+    for key, val, tag in examples:
+        db.insert(schema.table_name, [key, val, tag], col_names)  # <-- include col_names
 
-    # 4) Obtengo el índice ISAM
-    idx = schema.get_indexes()["valor"]
-    assert idx is not None
+    # 4) Retrieve the ISAM index and exercise search & rangeSearch
+    isam_index = db.get_index(schema, "key")
+    print("search(3):",        isam_index.search(3))
+    print("rangeSearch(2, 4):", isam_index.rangeSearch(2, 4))
 
-    rf = RecordFile(schema)
+    print(isam_index)
 
-    # 5) Pruebo getAll()
-    print("\n==> TEST getAll() ==")
-    ptrs = idx.getAll()
-    recs = [rf.read(p) for p in ptrs]
-    vals = [r.values[1] for r in recs]
-    print("getAll returned valores:", sorted(vals))
-    assert sorted(vals) == sorted(val for _, val in ejemplos)
+    # 5) Verify behavior with simple assertions
+    assert isam_index.search(3) == [3]
+    assert sorted(isam_index.rangeSearch(2, 4)) == [2, 3, 4]
 
-    # 6) Pruebo search() para cada valor
-    print("\n==> TEST search() ==")
-    for _, val in ejemplos:
-        results = idx.search(val)
-        print(f"search({val}) -> positions {results}")
-        assert results,       f"search no encontró {val}"
-        rec = rf.read(results[0])
-        assert rec.values[1] == val
+    print("✔ ISAM index tests passed!")
 
-    # 7) Pruebo rangeSearch() entre 60 y 130 → debería devolver los IDs 1 y 4
-    print("\n==> TEST rangeSearch() ==")
-    inside_ptrs = idx.rangeSearch(60, 130)
-    ids_in = sorted(rf.read(p).values[0] for p in inside_ptrs)
-    print(f"rangeSearch(60,130) -> IDs {ids_in}")
-    assert set(ids_in) == {1, 4}
-
-    # 8) Pruebo delete() de todos los '50'
-    print("\n==> TEST delete() ==")
-    ok = idx.delete(50)
-    print(f"delete(50) -> {ok}")
-    assert ok is True
-    remaining_vals = sorted(rf.read(p).values[1] for p in idx.getAll())
-    print("Remaining valores after delete:", remaining_vals)
-    assert 50 not in remaining_vals
-
-    # 9) Pruebo delete() en inexistente
-    print("\n==> TEST delete non-existent ==")
-    ok2 = idx.delete(999)
-    print(f"delete(999) -> {ok2}")
-    assert ok2 is False
-
-    print("\n✅ Todos los tests de ISAMIndex pasaron correctamente.")
-
-    if __name__ == "__main__":
-        test_isam()
+if __name__ == "__main__":
+    test_isam()

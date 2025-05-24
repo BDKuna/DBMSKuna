@@ -13,6 +13,7 @@ import logger
 class LeafRecord:
     # clave (tipo según columna) + posición de datos (int)
     def __init__(self, column: Column, key, datapos: int):
+        self.column = column
         self.FMT = utils.calculate_column_format(column) + "i"
         self.STRUCT = struct.Struct(self.FMT)
         self.key = key
@@ -20,7 +21,7 @@ class LeafRecord:
 
     def pack(self) -> bytes:
         # varchar → encode+padded, demás → pasarlo directamente
-        val = self.key.encode() if self.STRUCT.format[0].isalpha() else self.key
+        val = self.key.encode() if self.column.data_type == utils.DataType.VARCHAR else self.key
         return self.STRUCT.pack(val, self.datapos)
 
     @staticmethod
@@ -34,6 +35,7 @@ class LeafRecord:
 class IndexRecord:
     # clave + dos punteros (int,int)
     def __init__(self, column: Column, key, left: int, right: int):
+        self.column = column
         self.FMT = utils.calculate_column_format(column) + "ii"
         self.STRUCT = struct.Struct(self.FMT)
         self.key = key
@@ -41,7 +43,7 @@ class IndexRecord:
         self.right = right
 
     def pack(self) -> bytes:
-        val = self.key.encode() if self.STRUCT.format[0].isalpha() else self.key
+        val = self.key.encode() if self.column.data_type == utils.DataType.VARCHAR else self.key
         return self.STRUCT.pack(val, self.left, self.right)
 
     @staticmethod
@@ -214,7 +216,9 @@ class ISAMFile:
     def _size_leaf(self):
         # cabecera + leaf_factor * (formato clave + i)
         key_fmt = utils.calculate_column_format(self.column)
-        sz = struct.calcsize("iii" + key_fmt + "i" * self.leaf_factor)
+        # (key_fmt + "i") es el formato de UN registro; lo repetimos leaf_factor veces
+        rec_fmt = key_fmt + "i"
+        sz = struct.calcsize(LeafPage.HEADER_FMT + rec_fmt * self.leaf_factor)
         return sz
 
     def count_leaf_pages(self) -> int:
@@ -295,7 +299,40 @@ class ISAMFile:
         y genera EXACTAMENTE p = (i+1)^2 páginas hoja (not_overflow=1),
         con overflow si hace falta, encadenándolas adecuadamente.
         """
-        # 1) cargar y ordenar
+
+        # 2) parámetros
+        l = self.leaf_factor
+        i = self.index_factor
+        p = (i + 1) ** 2  # número de páginas regulares
+        empty_key = utils.get_empty_value(self.column)
+
+        # 3) cálculos de offsets y tamaños
+        lf, ix = self.read_header()
+        root_sz = self._size_root()
+        lvl1_sz = root_sz  # mismo formato que root
+        leaf_sz = self._size_leaf()
+        leaves_off = self._offset_leaves()
+
+        leaf_idx = 0  # contador global de hojas escritas
+        reg_pages = 0  # cuántas regulares ya
+        overflow = []
+        # 0) si no hay registros en rf
+        if rf.max_id() == 0:
+            with open(self.filename, "r+b") as f:
+                # asegurarnos de reservar hasta la primera hoja
+                f.seek(0, os.SEEK_END)
+                if f.tell() < leaves_off:
+                    f.write(b'\x00' * (leaves_off - f.tell()))
+                f.seek(leaves_off)
+                # rellenar con hojas vacías hasta p
+                while reg_pages < p:
+                    chunk = [LeafRecord(self.column, empty_key, -1) for _ in range(l)]
+                    self.write_leaf_page(LeafPage(leaf_idx, -1, 1, chunk, l))
+                    leaf_idx += 1
+                    reg_pages += 1
+            self._link_leaf_pages(leaves_off, leaf_sz, leaf_idx)
+            return
+        # 1) cargar y ordena
         leafrecs = []
         pos = 0
         while True:
@@ -306,23 +343,6 @@ class ISAMFile:
             leafrecs.append((key, pos))
             pos += 1
         leafrecs.sort(key=lambda x: x[0])
-
-        # 2) parámetros
-        l = self.leaf_factor
-        i = self.index_factor
-        p = (i + 1) ** 2              # número de páginas regulares
-        empty_key = utils.get_empty_value(self.column)
-
-        # 3) cálculos de offsets y tamaños
-        lf, ix         = self.read_header()
-        root_sz        = self._size_root()
-        lvl1_sz        = root_sz          # mismo formato que root
-        leaves_off     = self._offset_leaves()
-        leaf_sz        = self._size_leaf()
-
-        leaf_idx   = 0  # contador global de hojas escritas
-        reg_pages  = 0  # cuántas regulares ya
-        overflow   = []
 
         with open(self.filename, "r+b") as f:
             # asegurarnos de reservar hasta la primera hoja
@@ -390,26 +410,33 @@ class ISAMFile:
 
     def _link_leaf_pages(self, leaf_off: int, leaf_sz: int, count: int):
         """
-        Re-escribe en cada LeafPage su next_page para apuntar a la siguiente.
+        Re-escribe en cada LeafPage su next_page para apuntar a la siguiente,
+        preservando el contenido de registros tal como esté.
         """
         empty_key = utils.get_empty_value(self.column)
-        with open(self.filename, "r+b") as f:
-            for idx in range(count):
-                page_start = leaf_off + idx * leaf_sz
-                f.seek(page_start)
-                # leo header actual
-                buf = f.read(LeafPage.HSIZE)
-                page_num, _, not_ovf = struct.unpack(LeafPage.HEADER_FMT, buf)
-                # calculo siguiente
-                next_pg = idx + 1 if idx + 1 < count else -1
-                # reescribo sólo la cabecera
-                f.seek(page_start)
-                # uso pack de un LeafPage vacío para regenerar header
-                hdr_only = LeafPage(page_num, next_pg, not_ovf,
-                                    [LeafRecord(self.column, empty_key, -1)]*self.leaf_factor,
-                                    self.leaf_factor).STRUCT.pack(  # solo HEADER_FMT importa aquí
-                    page_num, next_pg, not_ovf, *([0]*(self.leaf_factor*0)) )
-                f.write(hdr_only)
+
+        for page_num in range(count):
+            # 1) Leemos la página actual para extraer sus registros y flag
+            leaf = self.read_leaf_page(page_num)
+            # 2) Calculamos su next_page
+            next_pg = page_num + 1 if page_num + 1 < count else -1
+            # 3) Asegurarnos de tener exactamente leaf_factor registros
+            records = leaf.records
+            #    (normalmente ya vienen completos; si no, rellenamos con empty)
+            if len(records) < self.leaf_factor:
+                padding = [
+                    LeafRecord(self.column, empty_key, -1)
+                    for _ in range(self.leaf_factor - len(records))
+                ]
+                records = records + padding
+            # 4) Reescribimos la página con el nuevo next_page
+            #    (usa write_leaf_page_at para que internamente haga el pack correcto)
+            self.write_leaf_page_at(
+                page_num,
+                records,
+                next_pg,
+                not_overflow=leaf.not_overflow
+            )
 
     def _build_level1_phase1(self, f, ctx):
         """
@@ -599,13 +626,13 @@ class ISAMFile:
 
     def build_level1(self):
         """
-        Construye t odo el Nivel 1 completo (fases 1 y 2).
+        Construye el Nivel 1 completo (fases 1 y 2).
         Asume que ya has corrido copy_to_leaf_records() antes.
         """
         # 1) sacar parámetros del header
         lf, ix = self.read_header()  # leaf_factor, index_factor
         i = ix
-        p = i * (i + 1)  # punteros totales en nivel1
+        p = (i + 1) ** 2  # punteros totales en nivel1
 
         # 2) calcular cuántas hojas reales hay
         rec0 = IndexRecord(self.column, 0, 0, 0)
@@ -700,15 +727,12 @@ class ISAMFile:
 
             records.append(IndexRecord(self.column, rec_id, left, right))
 
-        # 3) empaqueto y escribo la raíz
+        # 3) empaqueto y escribo la raíz usando los registros que ya construimos
         root_page = IndexPage(
-            page_num=0,
-            records=[
-                IndexRecord(self.column, rec_id, left, right)
-                for (left, right) in ...
-            ],
-            index_factor=self.index_factor
-        )
+            page_num = 0,
+            records = records,
+            index_factor = self.index_factor
+            )
         self.write_root_page(root_page)
 
 # --------------------------------------------------------------------
@@ -740,33 +764,33 @@ class ISAMIndex:
         # 3) construir root
         self.file.build_root()
 
-    def range_search(self, min_key, max_key) -> list[int]:
+    def rangeSearch(self, ini, end) -> list[int]:
         """
         Devuelve la lista de datapos de todos los registros con key entre
-        min_key y max_key (inclusive), recorriendo hoja tras hoja.
+        ini y end (inclusive), recorriendo hoja tras hoja.
         """
         results = []
-        if max_key < min_key:
+        if end < ini:
             return results
 
         # 1) bajar desde la raíz hasta nivel 1
         root = self.file.read_root_page()
-        lvl1_num = root.find_child_ptr(min_key)
+        lvl1_num = root.find_child_ptr(ini)
 
         # 2) elegir la página de nivel 1 adecuada
         lvl1 = self.file.read_level1_page(lvl1_num)
 
         # 3) desde ahí, el puntero a la hoja “base”
-        leaf_num = lvl1.find_child_ptr(min_key)
+        leaf_num = lvl1.find_child_ptr(ini)
         lp = self.file.read_leaf_page(leaf_num)
 
         # 4) barrer hoja a hoja hasta pasarnos de max_key
         while lp is not None:
             for rec in lp.records:
                 # rec.key y rec.datapos según tu LeafRecord
-                if rec.key < min_key:
+                if rec.key < ini:
                     continue
-                if rec.key > max_key:
+                if rec.key > end:
                     return results
                 results.append(rec.datapos)
             if lp.next_page == -1:
@@ -780,9 +804,9 @@ class ISAMIndex:
         Búsqueda puntual: sólo devuelve los datapos de los registros con key == key.
         Internamente llama a range_search(key, key).
         """
-        return self.range_search(key, key)
+        return self.rangeSearch(key, key)
 
-    def insert(self, record: Record):
+    def insert(self, pos: int, key: any):
         """
         1) Persistir en RecordFile.
         2) Bajar ROOT → nivel1 → hoja_base.
@@ -795,9 +819,9 @@ class ISAMIndex:
         lf = self.file.leaf_factor
         empty_key = utils.get_empty_value(self.column)
 
-        # 1) Persistir en data_file
-        datapos = self.rf.append(record)
-        new_lr = LeafRecord(self.column, record.values[0], datapos)
+        # El record ya está en RecordFile; pos es su offset
+        datapos = pos
+        new_lr = LeafRecord(self.column, key, datapos)
 
         # Asegurarnos de tener num_leaves actualizado
         if not hasattr(self.file, "num_leaves"):
@@ -1023,7 +1047,7 @@ class ISAMIndex:
         print(f"Eliminado id={key} entre hojas {first}..{last}")
 
     def getAll(self) -> list[int]:
-        return self.range_search(utils.get_min_value(self.column),utils.get_max_value(self.column))
+        return self.rangeSearch(utils.get_min_value(self.column), utils.get_max_value(self.column))
 
     def clear(self):
         os.remove(self.file.filename)
