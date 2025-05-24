@@ -12,6 +12,7 @@ from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
+from indices.noindex import NoIndex
 from core.record_file import Record, RecordFile
 import logger
 
@@ -60,7 +61,7 @@ class DBManager:
                         index = RTreeIndex(table_schema, column)
                         pass
                     case IndexType.NONE:
-                        # index = NoIndex(table_schema, column)
+                        index = NoIndex(table_schema, column)
                         pass
                     case _:
                         pass
