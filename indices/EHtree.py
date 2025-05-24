@@ -328,6 +328,10 @@ class ExtendibleHashTree:
         """
         Busca todos los registros con lo <= key <= hi.
         """
+        if(lo == None):
+            lo = utils.get_min_value(self.column)
+        if(hi == None):
+            hi = utils.get_max_value(self.column)
         out = []
         # recorro todos y filtro en memoria:
         for rec in self.get_all():
@@ -348,7 +352,7 @@ class ExtendibleHashTree:
             return
         # si no existía, simplemente no hace nada
     
-    def getall(self) -> list[Record]:
+    def get_all(self) -> list[Record]:
         """
         Recorre todo el árbol y devuelve la lista de Record(key, pointer)
         sin convertirlos aún en punteros.

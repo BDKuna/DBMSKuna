@@ -343,6 +343,13 @@ class AVLTree:
             self.indexFile.write_header(new_root)
 
     def rangeSearch(self, i, j) -> list[int]:
+        self.logger.warning(f"RANGE-SEARCH: {i}, {j}")
+        if(i == None):
+            i = utils.get_min_value(self.column)
+        if(j == None):
+            j = utils.get_max_value(self.column)
+        print(i, j)
+        
         r = []
         self._range_search_aux(r, i, j)
         return r
@@ -353,8 +360,7 @@ class AVLTree:
         pos = self._seek(key)
         if pos == -1:
             self.logger.warning("The id is not on the tree")
-            return -1
-        record_pos = self.indexFile.read(pos).pointer
+            return []
         return self.rangeSearch(key, key)
 
     def getAll(self) -> list[int]:
