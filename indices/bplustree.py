@@ -10,7 +10,11 @@ from core import utils
 
 class NodeBPlus:
 	BLOCK_FACTOR = 3
-	def __init__(self, column: Column, keys:list = [], pointers:list = [], isLeaf:bool = False, size:int = 0, nextNode:int = -1):
+	def __init__(self, column: Column, keys=None, pointers=None, isLeaf:bool = False, size:int = 0, nextNode:int = -1):
+		if pointers is None:
+			pointers = []
+		if keys is None:
+			keys = []
 		self.column = column
 		self.FORMAT = utils.calculate_column_format(column) * self.BLOCK_FACTOR + "i" * (self.BLOCK_FACTOR + 1) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
 		self.NODE_SIZE = struct.calcsize(self.FORMAT)
