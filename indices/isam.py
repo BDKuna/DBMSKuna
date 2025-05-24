@@ -1,7 +1,7 @@
 # indices/isam.py
 
-import os, struct, bisect, math
-from core.schema import TableSchema, Column, IndexType, DataType
+import os, struct, math
+from core.schema import TableSchema, Column, IndexType
 from core import utils
 from core.record_file import RecordFile, Record
 import logger
@@ -217,6 +217,25 @@ class ISAMFile:
         sz = struct.calcsize("iii" + key_fmt + "i" * self.leaf_factor)
         return sz
 
+    def count_leaf_pages(self) -> int:
+        """
+        Returns how many leaf-pages are currently in the file.
+        """
+        total = os.path.getsize(self.filename)
+        leaves_off = self._offset_leaves()
+        leaf_sz    = self._size_leaf()
+        # floor division will drop any trailing padding
+        return max(0, (total - leaves_off) // leaf_sz)
+
+    def append_leaf_page(self, page: 'LeafPage'):
+        """
+        Writes the given LeafPage at the end of the file, under the
+        assumption that its page_num field is already correct.
+        """
+        with open(self.filename, "r+b") as f:
+            f.seek(0, os.SEEK_END)
+            f.write(page.pack())
+
     def read_leaf_page(self, leaf_idx: int) -> 'LeafPage':
         lf, ix = self.read_header()
         sz   = self._size_leaf()
@@ -239,6 +258,35 @@ class ISAMFile:
         off = self._offset_leaves() + page.page_num * sz
         with open(self.filename, "r+b") as f:
             f.seek(off)
+            f.write(page.pack())
+
+    def write_leaf_page_at(self, leaf_num: int,
+                           records: list[LeafRecord], next_page: int,
+                           not_overflow: int = None) -> None:
+        """
+        Rebasacribe la página hoja `leaf_num` con los datos dados.
+        Si not_overflow es None, preserva el flag actual de esa página.
+        """
+        lf, ix = self.read_header()
+        # tamaños
+        rec0 = IndexRecord(self.column, 0, 0, 0)
+        record_size = rec0.STRUCT.size
+        lr0 = LeafRecord(self.column, 0, 0)
+        leaf_record_size = lr0.STRUCT.size
+
+        idx_sz = IndexPage.HSIZE + ix * record_size
+        leaf_off = self.HEADER_SIZE + idx_sz * (1 + ix)
+        leaf_sz = LeafPage.HSIZE + lf * leaf_record_size
+
+        # si no nos pasan not_overflow, lo leemos primero
+        if not_overflow is None:
+            old = self.read_leaf_page(leaf_num)
+            not_overflow = old.not_overflow if old else 0
+
+        # construimos y escribimos la página completa
+        page = LeafPage(leaf_num, next_page, not_overflow, records, lf)
+        with open(self.filename, "r+b") as f:
+            f.seek(leaf_off + leaf_num * leaf_sz)
             f.write(page.pack())
 
     def copy_to_leaf_records(self, rf: RecordFile):
@@ -627,6 +675,7 @@ class ISAMFile:
         # 1) recupero factores
         lf, ix = self.read_header()  # leaf_factor, index_factor
         i = ix
+        rec_id = None
 
         records: list[IndexRecord] = []
 
@@ -733,20 +782,292 @@ class ISAMIndex:
         """
         return self.range_search(key, key)
 
-    def insert(self, record):
-        # persistir en rf.append(record),
-        # luego lógica idéntica a tu metodo insert anterior,
-        # pero usando self.file.read_leaf_page(), write_leaf_page(), etc.
-        ...
+    def insert(self, record: Record):
+        """
+        1) Persistir en RecordFile.
+        2) Bajar ROOT → nivel1 → hoja_base.
+        3) Recorrer la cadena de hojas hasta encontrar la hoja destino.
+        4) Si hay hueco, insertar ordenado.
+        5) Si está llena, intentar fusionar con su overflow:
+           • Si existe overflow y tiene hueco, merge en dos páginas.
+           • Si no, crear un overflow simple.
+        """
+        lf = self.file.leaf_factor
+        empty_key = utils.get_empty_value(self.column)
 
-    def delete(self, key):
-        # replicar tu delete anterior sobre first/last,
-        # usando self.file.read_leaf_page(), write_leaf_page(), etc.
-        ...
+        # 1) Persistir en data_file
+        datapos = self.rf.append(record)
+        new_lr = LeafRecord(self.column, record.values[0], datapos)
+
+        # Asegurarnos de tener num_leaves actualizado
+        if not hasattr(self.file, "num_leaves"):
+            self.file.num_leaves = self.file.count_leaf_pages()
+
+        # 2) Hoja base desde ROOT → nivel1
+        root = self.file.read_root_page()
+        lvl1_num = root.find_child_ptr(new_lr.key)
+        lvl1 = self.file.read_level1_page(lvl1_num)
+        leaf_base = lvl1.find_child_ptr(new_lr.key)
+
+        # 3) Buscar hoja destino
+        prev_leaf = None
+        curr_leaf = leaf_base
+        while True:
+            leaf = self.file.read_leaf_page(curr_leaf)
+            # 3.1 Primer registro > new_lr.key
+            idx = next((i for i, r in enumerate(leaf.records) if r.key > new_lr.key), None)
+            if idx is not None:
+                dest = curr_leaf
+                break
+            # 3.2 Si la siguiente es una hoja “regular”, nos quedamos
+            if leaf.next_page != -1:
+                nxt = self.file.read_leaf_page(leaf.next_page)
+                if nxt.not_overflow:
+                    dest = curr_leaf
+                    break
+            else:
+                dest = curr_leaf
+                break
+            prev_leaf = curr_leaf
+            curr_leaf = leaf.next_page
+
+        # 4) Intentar insertar en destino
+        leaf_dest = self.file.read_leaf_page(dest)
+        cur = [r for r in leaf_dest.records if r.key != empty_key]
+        next_pg = leaf_dest.next_page
+
+        if len(cur) < lf:
+            # cabe: añadimos, ordenamos y paddeamos
+            cur.append(new_lr)
+            cur.sort(key=lambda r: r.key)
+            while len(cur) < lf:
+                cur.append(LeafRecord(self.column, empty_key, -1))
+            leaf_dest.records = cur
+            leaf_dest.next_page = next_pg
+            # preserva not_overflow
+            self.file.write_leaf_page(leaf_dest)
+            print(f"Insertado en hoja destino #{dest}")
+            return
+
+        # 5) destino lleno → probar fusión con overflow inmediato
+        if next_pg != -1:
+            leaf_over = self.file.read_leaf_page(next_pg)
+            if not leaf_over.not_overflow:
+                cur2 = [r for r in leaf_over.records if r.key != empty_key]
+                if len(cur2) < lf:
+                    # fusionar destino + overflow + nuevo
+                    merged = sorted(cur + cur2 + [new_lr], key=lambda r: r.key)
+                    c1 = merged[:lf]
+                    c2 = merged[lf:lf * 2]
+                    nxt = leaf_over.next_page
+                    # paddear
+                    while len(c1) < lf: c1.append(LeafRecord(self.column, empty_key, -1))
+                    while len(c2) < lf: c2.append(LeafRecord(self.column, empty_key, -1))
+                    # reescribir
+                    leaf_dest.records = c1
+                    leaf_dest.next_page = next_pg
+                    self.file.write_leaf_page(leaf_dest)
+                    leaf_over.records = c2
+                    leaf_over.next_page = nxt
+                    self.file.write_leaf_page(leaf_over)
+                    print(f"Fusionado hojas {dest} + {next_pg}")
+                    return
+
+        # 5.b) overflow simple
+        new_leaf_id = self.file.num_leaves
+        merged = sorted(cur + [new_lr], key=lambda r: r.key)
+        c1, c2 = merged[:lf], merged[lf:]
+        # paddear
+        while len(c1) < lf: c1.append(LeafRecord(self.column, empty_key, -1))
+        while len(c2) < lf: c2.append(LeafRecord(self.column, empty_key, -1))
+
+        # reescribir hoja destino apuntando al nuevo overflow
+        leaf_dest.records = c1
+        leaf_dest.next_page = new_leaf_id
+        self.file.write_leaf_page(leaf_dest)
+
+        # crear overflow al final
+        overflow = LeafPage(
+            page_num=new_leaf_id,
+            next_page=next_pg,
+            not_overflow=False,
+            records=c2,
+            leaf_factor=lf
+        )
+        self.file.append_leaf_page(overflow)
+        self.file.num_leaves += 1
+
+        print(f"Overflow simple: hoja {dest} → nueva hoja {new_leaf_id}")
+
+    def delete(self, key: int):
+        lf = self.file.leaf_factor
+
+        # 1) Bajar Root → Nivel1 → first candidate
+        root    = self.file.read_root_page()
+        lvl1_id = root.find_child_ptr(key)
+        lvl1    = self.file.read_level1_page(lvl1_id)
+        first   = lvl1.find_child_ptr(key)
+
+        # 2) Encontrar la primera hoja que realmente contenga key
+        prev = None
+        curr = first
+        first = None
+        while curr != -1:
+            lp = self.file.read_leaf_page(curr)
+            if any(r.key == key for r in lp.records):
+                first = curr
+                break
+            prev = curr
+            curr = lp.next_page
+
+        if first is None:
+            print(f"No existe ningún registro con id={key}")
+            return
+
+        # 3) Encontrar la última hoja que contiene key
+        last   = first
+        lp_last = self.file.read_leaf_page(last)
+        while lp_last.next_page != -1:
+            nxt    = lp_last.next_page
+            cand   = self.file.read_leaf_page(nxt)
+            if any(r.key == key for r in cand.records):
+                last    = nxt
+                lp_last = cand
+            else:
+                break
+
+        # CASO 1: solo una hoja en el rango
+        if last == first:
+            lp = self.file.read_leaf_page(first)
+            # 4a) filtro y compacto
+            kept = [r for r in lp.records if r.key != key]
+            kept.sort(key=lambda r: r.key)
+            while len(kept) < lf:
+                kept.append( LeafRecord(self.column,
+                                        utils.get_empty_value(self.column),
+                                        -1) )
+
+            # 4b) si era overflow y quedó vacía, desconecto
+            if lp.not_overflow == 0 and all(r.key == utils.get_empty_value(self.column) for r in kept):
+                if prev is not None:
+                    prev_lp = self.file.read_leaf_page(prev)
+                    self.file.write_leaf_page_at(prev,
+                                            prev_lp.records,
+                                            lp.next_page,
+                                            not_overflow=None)
+                print(f"Hoja overflow {first} quedó vacía y fue desconectada")
+            else:
+                # reescribo manteniendo bandera
+                self.file.write_leaf_page_at(first,
+                                        kept,
+                                        lp.next_page,
+                                        not_overflow=lp.not_overflow)
+                print(f"Eliminado id={key} en hoja única {first}")
+            return
+
+        # CASO GENERAL: varias hojas
+        # 4) reconectar prev → first
+        if prev is not None:
+            prev_lp = self.file.read_leaf_page(prev)
+            self.file.write_leaf_page_at(prev,
+                                    prev_lp.records,
+                                    first,
+                                    not_overflow=None)
+
+        # reconectar first → last
+        first_lp = self.file.read_leaf_page(first)
+        self.file.write_leaf_page_at(first,
+                                first_lp.records,
+                                last,
+                                not_overflow=None)
+
+        # 5) juntar registros de first y last (sin key)
+        lp_first = self.file.read_leaf_page(first)
+        lp_last  = self.file.read_leaf_page(last)
+        combined = ([r for r in lp_first.records if r.key != key] +
+                    [r for r in lp_last.records  if r.key != key])
+        combined.sort(key=lambda r: r.key)
+
+        # 6) repartir en first y last
+        kept_first = combined[:lf]
+        kept_last  = combined[lf:lf*2]
+        # rellenar
+        empty = LeafRecord(self.column,
+                           utils.get_empty_value(self.column),
+                           -1)
+        while len(kept_first) < lf:
+            kept_first.append(empty)
+        while len(kept_last) < lf:
+            kept_last.append(empty)
+
+        # 7) reescribir first y last
+        self.file.write_leaf_page_at(first,
+                                kept_first,
+                                last,
+                                not_overflow=lp_first.not_overflow)
+        self.file.write_leaf_page_at(last,
+                                kept_last,
+                                lp_last.next_page,
+                                not_overflow=lp_last.not_overflow)
+
+        # 8) si last quedó vacía *y* es overflow, desconectarla
+        if lp_last.not_overflow == 0 and all(r.key == utils.get_empty_value(self.column)
+                                             for r in kept_last):
+            after = lp_last.next_page
+            self.file.write_leaf_page_at(first,
+                                    kept_first,
+                                    after,
+                                    not_overflow=lp_first.not_overflow)
+            print(f"Última hoja {last} quedó vacía y fue desconectada")
+
+        print(f"Eliminado id={key} entre hojas {first}..{last}")
 
     def getAll(self) -> list[int]:
-        # recorres todas las hojas encadenadas y devuelves datapos
-        ...
+        return self.range_search(utils.get_min_value(self.column),utils.get_max_value(self.column))
 
     def clear(self):
         os.remove(self.file.filename)
+
+    def __str__(self):
+        # 1) Parámetros generales
+        lf, ix = self.file.read_header()
+        s = []
+        s.append(f"ISAM Index on {self.schema.table_name}.{self.column.name}")
+        s.append(f"Leaf factor: {lf}, Index factor: {ix}")
+        s.append(f"Level-1 pages: 0..{self.num_level1 - 1}")
+        s.append("")
+
+        # 2) Raíz
+        s.append("---- ROOT PAGE ----")
+        root = self.file.read_root_page()
+        for rec in root.records:
+            s.append(f"  ID={rec.key}, Left_lvl1={rec.left}, Right_lvl1={rec.right}")
+        s.append("")
+
+        # 3) Nivel 1
+        s.append("---- LEVEL-1 PAGES ----")
+        for lvl in range(self.num_level1):
+            page = self.file.read_level1_page(lvl)
+            s.append(f"Level1 ► Page #{lvl}")
+            for rec in page.records:
+                s.append(f"  ID={rec.key}, Left_leaf={rec.left}, Right_leaf={rec.right}")
+            s.append("")
+
+        # 4) Hojas encadenadas
+        s.append("---- LEAF PAGES ----")
+        # arrancamos en la primera hoja de la primera entrada de nivel1 (slot 0)
+        first_lvl1 = self.file.read_level1_page(0)
+        leaf_num = first_lvl1.records[0].left
+        visited = set()
+        while leaf_num != -1 and leaf_num not in visited:
+            visited.add(leaf_num)
+            leaf = self.file.read_leaf_page(leaf_num)
+            s.append(f"Leaf #{leaf.page_num}, next={leaf.next_page}, not_ovf={leaf.not_overflow}")
+            for lr in leaf.records:
+                if lr.key == utils.get_empty_value(self.column):
+                    continue
+                s.append(f"  key={lr.key}, datapos={lr.datapos}")
+            s.append("")
+            leaf_num = leaf.next_page
+
+        return "\n".join(s)
