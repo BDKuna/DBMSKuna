@@ -179,8 +179,7 @@ class DBManager:
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
-            self.logger.error("table doesn't exist")
-            #self.error("table doesn't exist")
+            self.error("table doesn't exist")
 
     #------------------------ SELECT IMPLEMENTATION ----------------------------
 
@@ -276,18 +275,7 @@ class DBManager:
             return self.list_to_bitmap(index.search(True))
         else:
             self.error("invalid condition")
-    
-    """
-    def select_all(self, tableSchema: TableSchema) -> dict[str, list]:
-        primaryIndex = tableSchema.get_primary_index()
-        record_file = RecordFile(tableSchema)
-        result = {
-            'columns': [i.name for i in tableSchema.columns],
-            'records': [record_file.read(pos).values for pos in primaryIndex.getAll()]
-        }
-        return result
-    """
-    
+        
     #------------------------ INSERT IMPLEMENTATION ----------------------------
 
     def insert(self, table_name:str, values: list, columns: list):

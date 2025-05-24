@@ -329,6 +329,7 @@ class BPlusTree:
 		return self.rangeSearchAux(key, key)
 
 	def rangeSearch(self, ini, end) -> list[int]:
+		self.logger.warning(f"init: {ini}, end: {end}")
 		if(ini == None):
 			ini = utils.get_min_value(self.column)
 		if(end == None):
@@ -370,16 +371,6 @@ class BPlusTree:
 		node:NodeBPlus = self.indexFile.readBucket(nodePos)
 		if(node.isLeaf):
 			return nodePos
-			"""
-			self.logger.info(f"Searching in leaf: key={key}")
-			for i in range(node.size):
-				if(node.keys[i] >= key):
-					self.logger.info(f"Record with key={key} was found on leaf")
-					return node.pointers[i]
-			self.logger.info(f"Record with key={key} was not found on leaf")
-			return None
-			"""
-
 		else:
 			self.logger.info(f"Searching in internal node: key={key}")
 			ite = 0

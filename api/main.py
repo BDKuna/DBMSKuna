@@ -4,6 +4,7 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from parser import parser
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,7 +26,12 @@ class Query(BaseModel):
 
 @app.post("/sql/")
 def query(q: Query):
-    result, message = parser.execute_sql(q.query)
+    try:
+        result, message = parser.execute_sql(q.query)
+    except RuntimeError as e:
+        result, message = None, str(e)
+        pass
+        #raise HTTPException(status_code=400, detail=str(e))
     
     resultPagination = {
         'columns': [],
@@ -36,8 +42,11 @@ def query(q: Query):
             'columns': result['columns'],
             'records': result['records'][q.offset : q.offset + q.limit]
         }
+        total = len(result['records'])
+    else:
+        total = 0
     return {
         'data': resultPagination,
-        'total': len(result['records']),
+        'total': total,
         'message': message
     }
