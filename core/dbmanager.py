@@ -288,14 +288,18 @@ class DBManager:
 
         if len(values) != len(tableSchema.columns):
             self.error("The number of values doesn't match the number of columns")
-        
+
         if columns:
             data_dict = dict(zip(columns, values))
             reordered_values = [data_dict[col] for col in table_columns]
         else:
             reordered_values = values
 
-        print(reordered_values)
+        # print(reordered_values)
+
+        for i, value in enumerate(reordered_values):
+            if tableSchema.columns[i].data_type != utils.get_data_type(value):
+                self.error(f"value '{value}' is not of data type {tableSchema.columns[i].data_type}")
 
         record = Record(tableSchema, reordered_values)
         record_file = RecordFile(tableSchema)
