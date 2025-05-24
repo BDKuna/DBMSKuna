@@ -4,17 +4,24 @@
     producto VARCHAR(50) INDEX HASH,
     cantidad INT,
     precio FLOAT,
-    fecha VARCHAR(20) INDEX RTREE,
-    cliente_id INT INDEX AVL
+    fecha VARCHAR(20) INDEX AVL
 );
 
-INSERT INTO ventas VALUES (1, 'Notebook', 2, 1200.50, '2023-11-15', 45);
-INSERT INTO ventas VALUES (2, 'Mouse', 5, 25.00, '2024-01-10', 46);
-INSERT INTO ventas VALUES (3, 'Teclado', 3, 45.00, '2024-02-05', 45);
+CREATE TABLE ventas (
+    id INT PRIMARY KEY INDEX BTREE,
+    producto VARCHAR(30) INDEX HASH,
+    cantidad INT INDEX BTREE,
+    precio FLOAT INDEX AVL,
+    fecha VARCHAR(20) INDEX AVL
+);
+
+INSERT INTO ventas VALUES (1, 'Notebook', 2, 1200.50, '2023-11-15');
+INSERT INTO ventas VALUES (2, 'Mouse', 5, 25.00, '2024-01-10');
+INSERT INTO ventas VALUES (3, 'Teclado', 3, 45.00, '2024-02-05');
 
 SELECT producto, cantidad, precio FROM ventas
-WHERE (precio > 100 AND cantidad >= 2)
-  OR (fecha BETWEEN '2024-01-01' AND '2024-12-31' AND cliente_id != 47)
+WHERE (precio > 100.0 AND cantidad >= 2)
+  OR (fecha BETWEEN '2024-01-01' AND '2024-12-31')
   AND NOT producto = 'Mouse';
 
 CREATE INDEX idx_fecha ON ventas USING RTREE(fecha);

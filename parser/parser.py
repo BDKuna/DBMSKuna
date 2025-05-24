@@ -95,6 +95,7 @@ class SQL:
 class ParseError(Exception):
     def __init__(self, error : str, line : int, pos : int, token : Token):
         self.error = f"Parse error: {error} (at line {line} position {pos} with token {token})"
+        print(self.error)
         super().__init__(self.error)
 
 class Parser:
@@ -148,7 +149,7 @@ class Parser:
             self.current = self.scanner.next_token()
             return self.parse_sql()
         except ParseError as e:
-            print(e.error)
+            raise e
 
     # <sql> ::= <statement_list>
     # <statement_list> ::= <statement> ";" { <statement> ";" }
@@ -757,6 +758,7 @@ class Printer:
 class RuntimeError(Exception):
     def __init__(self, error : str):
         self.error = f"Runtime error: {error}"
+        print(self.error)
         super().__init__(self.error)
 
 
@@ -771,7 +773,7 @@ class Interpreter:
         try:
             return self.interpret_sql(sql)
         except RuntimeError as e:
-            print(e.error)
+            raise e
 
     def interpret_sql(self, sql : SQL):
         if not sql:
@@ -791,8 +793,10 @@ class Interpreter:
             return None, "Table dropped successfully."
         elif stmt_type == InsertStmt:
             self.interpret_insert_stmt(stmt)
+            return None, "Insertion successful"
         elif stmt_type == DeleteStmt:
             self.interpret_delete_stmt(stmt)
+            return None, "Deletion successful"
         elif stmt_type == CreateIndexStmt:
             self.interpret_create_index_stmt(stmt)
             return None, "Index created successfully."
@@ -830,8 +834,15 @@ class Interpreter:
 
 def execute_sql(sql:str):
     scanner = Scanner(sql)
-    parser = Parser(scanner)
-    sql = parser.parse()
-    interpreter = Interpreter()
-    return interpreter.interpret(sql)
+    try:
+        parser = Parser(scanner)
+        sql_parse = parser.parse()
+    except ParseError as e:
+        return None, str(e)
+
+    try:
+        interpreter = Interpreter()
+        return interpreter.interpret(sql_parse)  # (result, message)
+    except RuntimeError as e:
+        return None, str(e)
 
