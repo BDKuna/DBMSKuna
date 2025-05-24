@@ -12,7 +12,7 @@ from indices.bplustree import BPlusTree
 from indices.avltree import AVLTree
 from indices.EHtree import ExtendibleHashTree
 from indices.Rtree import RTreeIndex
-from indices.isam import ISAMIndex
+from indices.ISAMtree import ISAMIndex
 from core.record_file import Record, RecordFile
 import logger
 

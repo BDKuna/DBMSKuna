@@ -67,7 +67,7 @@ class TableSchema:
                 from indices.avltree import AVLTree
                 return AVLTree(self, column)
             case IndexType.ISAM:
-                from indices.isam import ISAMIndex
+                from indices.ISAMtree import ISAMIndex
                 return ISAMIndex(self, column)
             case IndexType.HASH:
                 from indices.EHtree import ExtendibleHashTree

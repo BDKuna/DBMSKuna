@@ -3,7 +3,7 @@
 import os, struct, math
 from core.schema import TableSchema, Column, IndexType
 from core import utils
-from core.record_file import RecordFile, Record
+from core.record_file import RecordFile
 import logger
 
 # --------------------------------------------------------------------
@@ -58,7 +58,7 @@ class LeafPage:
     HEADER_FMT = "iii"  # page_num, next_page, not_overflow
     HSIZE      = struct.calcsize(HEADER_FMT)
 
-    def __init__(self, page_num, next_page, not_overflow, records, leaf_factor):
+    def __init__(self, page_num:int, next_page:int, not_overflow:bool, records, leaf_factor):
         self.page_num     = page_num
         self.next_page    = next_page
         self.not_overflow = not_overflow
@@ -769,6 +769,11 @@ class ISAMIndex:
         Devuelve la lista de datapos de todos los registros con key entre
         ini y end (inclusive), recorriendo hoja tras hoja.
         """
+        if(ini == None):
+            ini = utils.get_min_value(self.column)
+        if(end == None):
+            end = utils.get_max_value(self.column)
+        
         results = []
         if end < ini:
             return results
@@ -782,7 +787,7 @@ class ISAMIndex:
 
         # 3) desde ahí, el puntero a la hoja “base”
         leaf_num = lvl1.find_child_ptr(ini)
-        lp = self.file.read_leaf_page(leaf_num)
+        lp:LeafPage = self.file.read_leaf_page(leaf_num)
 
         # 4) barrer hoja a hoja hasta pasarnos de max_key
         while lp is not None:
