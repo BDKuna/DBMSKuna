@@ -30,18 +30,25 @@ DELETE FROM ventas WHERE fecha < '2023-01-01';*/
 
 --DROP TABLE alumnos;
 
-/*CREATE TABLE alumnos (
+/*
+CREATE TABLE alumnos (
   codigo INT PRIMARY KEY INDEX HASH,
   nombre VARCHAR(20) INDEX BTREE,
   ciclo INT INDEX BTREE
-);*/
+);
 
-/*
+
 CREATE TABLE test (
   col1 INT PRIMARY KEY INDEX BTREE,
   col2 FLOAT
 );
 */
 
---INSERT INTO test VALUES (442, 4.42);
-SELECT * FROM test WHERE col2 >= 1.24
+/*
+CREATE TABLE test2 (
+  col1 VARCHAR(20) PRIMARY KEY INDEX HASH,
+  col2 INT INDEX AVL
+);
+*/
+
+SELECT * FROM test2 WHERE col1 = 'hola'

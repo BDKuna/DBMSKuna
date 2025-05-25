@@ -122,7 +122,8 @@ class DBManager:
         if bitmap[0]:
             id = len(bitmap) -1
             while id < record_file.max_id():
-                records.append(record_file.read(id))
+                record = record_file.read(id)
+                records.append(record)
                 id += 1
         return records
     
@@ -207,7 +208,7 @@ class DBManager:
                 record.values = [value_map[name] for name in select_schema.column_list]
         return {
             'columns': column_names if select_schema.all else select_schema.column_list,
-            'records': [record.values for record in result]
+            'records': [record.values for record in result if record]
         }
 
     def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray:
