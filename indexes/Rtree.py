@@ -90,7 +90,14 @@ class RTreeIndex:
         self.table_schema = table_schema
         self.column = column
         self.col_idx = table_schema.columns.index(column)
-        self.logger = logger.CustomLogger(f"RTreeIndex-{table_schema.table_name}-{column.name}".upper())
+        
+        
+        try:
+            self.logger = logger.CustomLogger(
+                f"RTreeIndex-{table_schema.table_name}-{column.name}".upper()
+            )
+        except Exception:
+            self.logger = None
 
 
         # ruta base para .idx/.dat
@@ -101,13 +108,24 @@ class RTreeIndex:
         )
         path = path[:-4]  # quitar .idx
 
+        # 1) Limpia siempre cualquier .idx/.dat/.opt previo
+        for ext in ('.idx', '.dat', '.opt'):
+            try:
+                os.remove(path + ext)
+            except OSError:
+                pass
+            
         # RecordFile de la tabla
         self.rf = RecordFile(table_schema)
 
         # crear/abrir R-Tree en disco
         props = index.Property()
         props.dimension = 2
-        self.idx = index.Index(path, properties=props)
+        
+        if os.path.exists(path + '.idx') and os.path.exists(path + '.dat'):
+            self.idx = index.Index(path)
+        else:
+            self.idx = index.Index(path, properties=props)
 
         # reconstruir mapeo key->pos
         self._key_to_pos = {}
@@ -145,10 +163,17 @@ class RTreeIndex:
         except Exception:
             return
 
-    def insert(self, pos: int, key) -> bool:
+    def insert(self, *args) -> bool:
         """
         Inserta la posición `pos` asociada a `key` (Point, tupla o string).
         """
+        if len(args) != 2:
+            raise TypeError("insert requiere key y pos")
+        a, b = args
+        if isinstance(a, int):
+            pos, key = a, b
+        else:
+            key, pos = a, b
         self.logger.warning(f"INSERTING: {key}")
         x, y = self._parse_key(key)
         bbox = (x, y, x, y)
@@ -160,7 +185,7 @@ class RTreeIndex:
         """
         Elimina la entrada asociada a `key`. Retorna True si existía.
         """
-        self.logger.warning(f"DELETING: {key}")
+        if self.logger: self.logger.warning(f"DELETING: {key}")
         pos = self._key_to_pos.get(key)
         if pos is None:
             return False
@@ -177,39 +202,26 @@ class RTreeIndex:
         """
         Búsqueda puntual: retorna lista con 0 o 1 posiciones.
         """
-        self.logger.warning(f"SEARCHING: {key}")
+        if self.logger: self.logger.warning(f"SEARCHING: {key}")
         pos = self._key_to_pos.get(key)
         return [] if pos is None else [pos]
 
     def rangeSearch(self, region) -> list[int]:
-        """
-        Búsqueda por región: acepta MBR o Circle.
-        """
-        self.logger.warning(f"RANGE SEARCHING: {region}")
+        """Rango espacial: MBR o Circle"""
+        if self.logger: self.logger.warning(f"RANGE SEARCHING: {region}")
         if isinstance(region, MBR):
-            return self._MBRSearch(region)
+            return list(self.idx.intersection(region.bounds()))
         if isinstance(region, Circle):
-            return self._circleSearch(region)
-        raise TypeError('rangeSearch requiere un objeto MBR o Circle')
-
-    def _MBRSearch(self, mbr: MBR) -> list[int]:
-        try:
-            return list(self.idx.intersection(mbr.bounds()))
-        except Exception:
-            return []
-
-    def _circleSearch(self, circle: Circle) -> list[int]:
-        try:
-            candidates = list(self.idx.intersection(circle.mbr()))
-        except Exception:
-            return []
-        resultado = []
-        for pos in candidates:
-            rec = self.rf.read(pos)
-            x, y = self._parse_key(rec.values[self.col_idx])
-            if circle.contains(x, y):
-                resultado.append(pos)
-        return resultado
+            # Filtrado circular
+            cand = list(self.idx.intersection(region.mbr()))
+            res = []
+            for pos in cand:
+                rec = self.rf.read(pos)
+                x, y = self._parse_key(rec.values[self.col_idx])
+                if region.contains(x, y):
+                    res.append(pos)
+            return res
+        raise TypeError('rangeSearch requiere MBR o Circle')
 
     def getAll(self) -> list[int]:
         """Retorna todas las posiciones indexadas."""
@@ -217,3 +229,7 @@ class RTreeIndex:
 
     def printBuckets(self):
         print("Indexed keys:", sorted(self._key_to_pos.keys()))
+    
+    def knnSearch(self, x0: float, y0: float, k: int) -> list[int]:
+        """k vecinos más cercanos a (x0,y0)"""
+        return list(self.idx.nearest((x0, y0, x0, y0), num_results=k))
