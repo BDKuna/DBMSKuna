@@ -4,8 +4,9 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 from parser.scanner import Token, Scanner
 from core.conditionschema import BinaryOp, Condition, ConditionColumn, ConditionValue, NotCondition, BinaryCondition, BetweenCondition, BooleanColumn
-from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column
+from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column, Point
 from core.dbmanager import DBManager
+from indexes.Rtree import Circle, MBR
 
 class Stmt:
     def __init__(self):
@@ -262,6 +263,8 @@ class Parser:
                 column_definition.data_type = DataType.DATE
             case "BOOL":
                 column_definition.data_type = DataType.BOOL
+            case "POINT":
+                column_definition.data_type = DataType.POINT
             case _:
                 self.error("unknown data type")
         if self.match(Token.Type.PRIMARY):
@@ -282,8 +285,8 @@ class Parser:
                     column_definition.index_type = IndexType.BTREE
                 case "RTREE":
                     column_definition.index_type = IndexType.RTREE
-                case "SEQ":
-                    column_definition.index_type = IndexType.SEQ
+                case "BRIN":
+                    column_definition.index_type = IndexType.BRIN
                 case _:
                     self.error("unknown index type")
         else:
@@ -326,13 +329,39 @@ class Parser:
             self.error("expected VALUES clause in INSERT statement")
         if not self.match(Token.Type.LPAR):
             self.error("expected '(' after VALUES keyword")
-        if not self.match_values():
-            self.error("expected value after '('")
-        insert_stmt.add_value(self.str_into_type(self.previous.lexema, self.previous))
-        while self.match(Token.Type.COMMA):
+        if self.match(Token.Type.LPAR): # POINT
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected a valid float value por x coordinate on POINT declaration")
+            x = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after x coordiante")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected a valid float value por y coordinate on POINT declaration")
+            y = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.RPAR):
+                self.error("expected ')' after y coordinate")
+            insert_stmt.add_value(Point(x, y))
+        else:
             if not self.match_values():
-                self.error("expected value after comma")
+                self.error("expected value after '('")
             insert_stmt.add_value(self.str_into_type(self.previous.lexema, self.previous))
+        while self.match(Token.Type.COMMA):
+            if self.match(Token.Type.LPAR): # POINT
+                if not self.match(Token.Type.FLOATVAL):
+                    self.error("expected a valid float value por x coordinate on POINT declaration")
+                x = self.str_into_type(self.previous.lexema, self.previous)
+                if not self.match(Token.Type.COMMA):
+                    self.error("expected comma after x coordiante")
+                if not self.match(Token.Type.FLOATVAL):
+                    self.error("expected a valid float value por y coordinate on POINT declaration")
+                y = self.str_into_type(self.previous.lexema, self.previous)
+                if not self.match(Token.Type.RPAR):
+                    self.error("expected ')' after y coordinate")
+                insert_stmt.add_value(Point(x, y))
+            else:
+                if not self.match_values():
+                    self.error("expected value after comma")
+                insert_stmt.add_value(self.str_into_type(self.previous.lexema, self.previous))
         if not self.match(Token.Type.RPAR):
             self.error("expected ')' after values")
         return insert_stmt
@@ -375,8 +404,8 @@ class Parser:
                     create_index_stmt.index_type = IndexType.BTREE
                 case "RTREE":
                     create_index_stmt.index_type = IndexType.RTREE
-                case "SEQ":
-                    create_index_stmt.index_type = IndexType.SEQ
+                case "BRIN":
+                    create_index_stmt.index_type = IndexType.BRIN
                 case _:
                     self.error("unknown index type")
         if not self.match(Token.Type.LPAR):
@@ -454,9 +483,9 @@ class Parser:
             return between_condition
         simple_condition = BinaryCondition()
         simple_condition.left = ConditionColumn(column_name)
-        if not (self.match(Token.Type.LT) or self.match(Token.Type.GT) or self.match(Token.Type.LE) or self.match(Token.Type.GE) or self.match(Token.Type.EQ) or self.match(Token.Type.NEQ)):
+        if not (self.match(Token.Type.LT) or self.match(Token.Type.GT) or self.match(Token.Type.LE) or self.match(Token.Type.GE) or self.match(Token.Type.EQ) or self.match(Token.Type.NEQ) or self.match(Token.Type.WITHIN) or self.match(Token.Type.KNN)):
             return BooleanColumn(column_name)
-            # self.error("expected a conditional operator")
+        
         match self.previous.type:
             case Token.Type.LT:
                 simple_condition.op = BinaryOp.LT
@@ -470,11 +499,83 @@ class Parser:
                 simple_condition.op = BinaryOp.EQ
             case Token.Type.NEQ:
                 simple_condition.op = BinaryOp.NEQ
+            case Token.Type.WITHIN:
+                if self.match(Token.Type.RECTANGLE):
+                    simple_condition.op = BinaryOp.WR
+                elif self.match(Token.Type.CIRCLE):
+                    simple_condition.op = BinaryOp.WC
+                else:
+                    self.error("expected RECTANGLE or CIRCLE after WITHIN")
+            case Token.Type.KNN:
+                simple_condition.op = BinaryOp.KNN
             case _:
                 self.error("unknown conditional operator")
-        if not self.match_values():
-            self.error("expected a value after conditional operator")
-        simple_condition.right = ConditionValue(self.str_into_type(self.previous.lexema, self.previous))
+        if simple_condition.op == BinaryOp.WR:
+            if not self.match(Token.Type.LPAR):
+                self.error("expected '(' after WITHIN RECTANGLE operation")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for min x coordinate")
+            x_min = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after min x coordinate")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for min x coordinate")
+            y_min = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after min x coordinate")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for min x coordinate")
+            x_max = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after min x coordinate")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for min x coordinate")
+            y_max = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.RPAR):
+                self.error("expected ')' after max y coordinate")
+            simple_condition.right = ConditionValue((x_min, y_min, x_max, y_max))
+        elif simple_condition.op == BinaryOp.WC:
+            if not self.match(Token.Type.LPAR):
+                self.error("expected '(' after WITHIN CIRCLE operation")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for x coordinate")
+            x = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after x coordinate")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for y coordinate")
+            y = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after y coordinate")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for radius")
+            radius = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.RPAR):
+                self.error("expected ')' after radius")
+            simple_condition.right = ConditionValue((x, y, radius))
+        elif simple_condition.op == BinaryOp.KNN:
+            if not self.match(Token.Type.LPAR):
+                self.error("expected '(' after KNN operation")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for x coordinate")
+            x = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after x coordinate")
+            if not self.match(Token.Type.FLOATVAL):
+                self.error("expected valid float value for y coordinate")
+            y = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.COMMA):
+                self.error("expected comma after y coordinate")
+            if not self.match(Token.Type.NUMVAL):
+                self.error("expected valid int value for k value")
+            k = self.str_into_type(self.previous.lexema, self.previous)
+            if not self.match(Token.Type.RPAR):
+                self.error("expected ')' after k value")
+            simple_condition.right = ConditionValue((x, y, k))
+        else:
+            if not self.match_values():
+                self.error("expected a value after conditional operator")
+            simple_condition.right = ConditionValue(self.str_into_type(self.previous.lexema, self.previous))
         return simple_condition
 
 
@@ -557,6 +658,12 @@ class Printer:
                     op = "<="
                 case BinaryOp.GE:
                     op = ">="
+                case BinaryOp.WR:
+                    op = "WITHIN RECTANGLE"
+                case BinaryOp.WC:
+                    op = "WITHIN CIRCLE"
+                case BinaryOp.KNN:
+                    op = "KNN"
                 case _:
                     self.error("unknown operation")
             return f"{self.condition_column_to_str(condition.left)} {op} {self.value_to_str(condition.right)}"
@@ -648,6 +755,8 @@ class Printer:
                 self.print_line("-> DATE")
             case DataType.BOOL:
                 self.print_line("-> BOOL")
+            case DataType.POINT:
+                self.print_line("-> POINT")
         self.indent -= 2
         if column_def.data_type == DataType.VARCHAR:
             self.print_line("-> Varchar limit:")
@@ -667,8 +776,8 @@ class Printer:
                 self.print_line(f"-> BTREE")
             case IndexType.RTREE:
                 self.print_line(f"-> RTREE")
-            case IndexType.SEQ:
-                self.print_line(f"-> SEQ")
+            case IndexType.BRIN:
+                self.print_line(f"-> BRIN")
             case IndexType.NONE:
                 self.print_line(f"-> NONE")
         self.indent -= 2
@@ -732,8 +841,8 @@ class Printer:
                 self.print_line(f"-> BTREE")
             case IndexType.RTREE:
                 self.print_line(f"-> RTREE")
-            case IndexType.SEQ:
-                self.print_line(f"-> SEQ")
+            case IndexType.BRIN:
+                self.print_line(f"-> BRIN")
         self.indent -= 2
         self.print_line("-> On columns:")
         self.indent += 2
@@ -785,7 +894,7 @@ class Interpreter:
     def interpret_stmt(self, stmt : Stmt):
         stmt_type = type(stmt)
         if stmt_type == SelectStmt:
-            return self.interpret_select_stmt(stmt), "Selection successfull."
+            return self.interpret_select_stmt(stmt), "Selection successful."
         elif stmt_type == CreateTableStmt:
             self.interpret_create_table_stmt(stmt)
             return None, "Table created successfully."
@@ -847,3 +956,16 @@ def execute_sql(sql:str):
     except RuntimeError as e:
         return None, str(e)
 
+def print_sql(sql: str):
+    scanner = Scanner(sql)
+    try:
+        parser = Parser(scanner)
+        sql_parse = parser.parse()
+    except ParseError as e:
+        return None, str(e)
+
+    try:
+        printer = Printer()
+        print(printer.print(sql_parse))
+    except RuntimeError as e:
+        return None, str(e)

@@ -6,12 +6,12 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
-from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
+from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema, Point
 from core import utils
 from indexes.bplustree import BPlusTree
 from indexes.avltree import AVLTree
 from indexes.EHtree import ExtendibleHashTree
-from indexes.Rtree import RTreeIndex
+from indexes.Rtree import RTreeIndex, MBR, Circle
 from indexes.ISAMtree import ISAMIndex
 from indexes.noindex import NoIndex
 
@@ -229,9 +229,30 @@ class DBManager:
                         break
                 if not column:
                     self.error(f"column '{condition.left.column_name}' doesn't exist in table '{table_schema.table_name}'")
+                if column.data_type == DataType.POINT:
+                    match op:
+                        case BinaryOp.WR:
+                            if utils.get_data_type(condition.right.value) != "rectangle":
+                                self.error(f"value '{condition.right.value}' is not a valid rectangle definition")
+                            index = self.get_index(table_schema, condition.left.column_name)
+                            mbr = MBR(condition.right.value[0], condition.right.value[1], condition.right.value[2], condition.right.value[3])
+                            return self.list_to_bitmap(index.rangeSearch(mbr))
+                        case BinaryOp.WC:
+                            if utils.get_data_type(condition.right.value) != "circle":
+                                self.error(f"value '{condition.right.value}' is not a valid circle definition")
+                            index = self.get_index(table_schema, condition.left.column_name)
+                            circle = Circle(condition.right.value[0], condition.right.value[1], condition.right.value[2])
+                            return self.list_to_bitmap(index.rangeSearch(circle))
+                        case BinaryOp.KNN:
+                            if utils.get_data_type(condition.right.value) != "knn":
+                                self.error(f"value '{condition.right.value}' is not a valid knn definition")
+                            index = self.get_index(table_schema, condition.left.column_name)
+                            return self.list_to_bitmap(index.knnSearch(condition.right.value[0], condition.right.value[1], condition.right.value[2]))
+                        case _:
+                            self.error("operation not supported for POINT type")
                 if column.data_type != utils.get_data_type(condition.right.value):
                     self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
-                match op:    
+                match op:
                     case BinaryOp.EQ: # Usa indexes
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.list_to_bitmap(index.search(condition.right.value))
@@ -258,6 +279,8 @@ class DBManager:
                     break
             if not column:
                 self.error(f"column '{condition.left.column_name}' doesn't exist in table '{table_schema.table_name}'")
+            if column.data_type == DataType.POINT:
+                self.error("operation not supported for POINT type")
             if column.data_type != utils.get_data_type(condition.mid.value) or column.data_type != utils.get_data_type(condition.right.value):
                 self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
             index = self.get_index(table_schema, condition.left.column_name)
@@ -309,12 +332,11 @@ class DBManager:
         record_file = RecordFile(tableSchema)
         pos = record_file.append(record)
 
-        indexes = tableSchema.get_indexes()
-
         #insertar los indexes
-        for i, index in enumerate(indexes.keys()):
-            if indexes[index] is not None:
-                indexes[index].insert(pos, record.values[i])
+        for i, column in enumerate(tableSchema.columns):
+            index = self.get_index(tableSchema, column.name)
+            if index:
+                index.insert(pos, record.values[i])
 
     def delete(self, delete_schema : DeleteSchema) -> None:
         table = self.get_table_schema(delete_schema.table_name)

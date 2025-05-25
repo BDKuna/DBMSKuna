@@ -5,6 +5,19 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 from core.conditionschema import ConditionSchema
 
+class Point:
+    """
+    Representa un punto 2D.
+    """
+    def __init__(self, x: float, y: float):
+        self.x = x
+        self.y = y
+
+    def __iter__(self):
+        return iter((self.x, self.y))
+
+    def __repr__(self):
+        return f"Point({self.x}, {self.y})"
 
 class DataType(Enum):
     INT = auto()
@@ -12,6 +25,7 @@ class DataType(Enum):
     VARCHAR = auto()
     DATE = auto()
     BOOL = auto()
+    POINT = auto()
 
     def __str__(self):
         return self.name
@@ -22,7 +36,7 @@ class IndexType(Enum):
     HASH = auto()
     BTREE = auto()
     RTREE = auto()
-    SEQ = auto()
+    BRIN = auto()
     NONE = auto()
 
     def __str__(self):
@@ -78,9 +92,9 @@ class TableSchema:
             case IndexType.RTREE:
                 from indexes.Rtree import RTreeIndex
                 return RTreeIndex(self, column)
-            case IndexType.SEQ:
+            case IndexType.BRIN:
                 pass
-                # SEQ(table_schema, column)
+                # BRIN(table_schema, column)
             case IndexType.NONE:
                 return None
             case _:

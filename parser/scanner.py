@@ -6,8 +6,9 @@ class Token:
             LPAR, RPAR, SELECT, FROM, WHERE, INSERT, INTO, VALUES, UPDATE, SET, DELETE, 
             CREATE, TABLE, DROP, AND, OR, NOT, AS, ORDER, BY, LIMIT, ID, STAR, BETWEEN,
             EQ, NEQ, LT, GT, LE, GE, COMMA, DOT, SEMICOLON, NUMVAL, FLOATVAL, STRINGVAL,
-            BOOLVAL, PRIMARY, KEY, DATATYPE, INDEX, ON, USING, INDEXTYPE, ERR, END
-        ) = range(46)
+            BOOLVAL, PRIMARY, KEY, DATATYPE, INDEX, ON, USING, INDEXTYPE, ERR, END, 
+            WITHIN, RECTANGLE, CIRCLE, KNN, ASC, DESC
+        ) = range(52)
 
     token_names = [
         "LPAR", "RPAR", "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES",
@@ -15,7 +16,7 @@ class Token:
         "AS", "ORDER", "BY", "LIMIT", "ID", "STAR", "BETWEEN", "EQ", "NEQ", "LT",
         "GT", "LE", "GE", "COMMA", "DOT", "SEMICOLON", "NUMVAL", "FLOATVAL", "STRINGVAL",
         "BOOLVAL", "PRIMARY", "KEY", "DATATYPE", "INDEX", "ON", "USING", "INDEXTYPE",
-        "ERR", "END"
+        "ERR", "END", "WITHIN", "RECTANGLE", "CIRCLE", "KNN", "ASC", "DESC"
     ]
 
     def __init__(self, token_type, lexema=""):
@@ -249,6 +250,7 @@ class Scanner:
                     "VARCHAR": Token.Type.DATATYPE,
                     "DATE": Token.Type.DATATYPE,
                     "BOOL": Token.Type.DATATYPE,
+                    "POINT": Token.Type.DATATYPE,
                     "INDEX": Token.Type.INDEX,
                     "ON": Token.Type.ON,
                     "USING": Token.Type.USING,
@@ -257,7 +259,13 @@ class Scanner:
                     "HASH": Token.Type.INDEXTYPE,
                     "BTREE": Token.Type.INDEXTYPE,
                     "RTREE": Token.Type.INDEXTYPE,
-                    "SEQ": Token.Type.INDEXTYPE,
+                    "BRIN": Token.Type.INDEXTYPE,
+                    "WITHIN": Token.Type.WITHIN,
+                    "RECTANGLE": Token.Type.RECTANGLE,
+                    "CIRCLE": Token.Type.CIRCLE,
+                    "KNN": Token.Type.KNN,
+                    "ASC": Token.Type.ASC,
+                    "DESC": Token.Type.DESC
                 }
                 if lexema in keywords:
                     return Token(keywords[lexema], lexema if keywords[lexema] in [Token.Type.BOOLVAL, Token.Type.INDEXTYPE, Token.Type.DATATYPE] else "")
