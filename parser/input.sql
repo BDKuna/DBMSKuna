@@ -98,6 +98,12 @@ CREATE TABLE test5 (
 
 INSERT INTO test5 VALUES ('A', 10, (1.0, 2.0));
 
+CREATE TABLE lugares (
+  id INT PRIMARY KEY INDEX BTREE,
+  ubicacion POINT INDEX RTREE,
+  nombre VARCHAR(100)
+);
+
 INSERT INTO lugares VALUES
   (1, (12.046374, 77.042793), 'Plaza Mayor');
 INSERT INTO lugares VALUES
