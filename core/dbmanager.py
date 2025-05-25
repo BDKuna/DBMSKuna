@@ -239,9 +239,16 @@ class DBManager:
             for record in result:
                 value_map = {col.name: val for col, val in zip(table.columns, record.values)}
                 record.values = [value_map[name] for name in select_schema.column_list]
+        final_result = []
+        for record in result:
+            if record:
+                for i, value in enumerate(record.values):
+                    if isinstance(value, tuple):
+                        record.values[i] = str(value)
+                final_result.append(record.values)
         return {
             'columns': column_names if select_schema.all else select_schema.column_list,
-            'records': [record.values for record in result if record]
+            'records': final_result
         }
 
     def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray:
