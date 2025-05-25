@@ -25,6 +25,7 @@ class NodeBPlus:
 			if len(pointers) != len(keys) + 1:
 				raise Exception("Creating internal node, number of pointers must be one more than number of keys")
 		
+
 		empty_key = utils.get_empty_value(self.column)
 		while len(keys) < self.BLOCK_FACTOR:
 			keys.append(empty_key)
@@ -118,6 +119,8 @@ class NodeBPlus:
 			start = i * key_size
 			end = start + key_size
 			val = struct.unpack(key_fmt, record[start:end])[0]
+			if column.data_type == DataType.FLOAT:
+				val = round(val,6) #float precision
 			if column.data_type == DataType.VARCHAR:
 				val = val.decode().strip("\x00")
 			keys.append(val)
@@ -309,7 +312,7 @@ class BPlusTree:
 		while(not node.isLeaf):
 			firstPos = node.pointers[0]
 			node = self.indexFile.readBucket(firstPos)
-		
+
 		pointers: list[int] = []
 		while(True):
 			assert(node.isLeaf)
@@ -340,11 +343,11 @@ class BPlusTree:
 		self.logger.warning(f"RANGE-SEARCH: {ini}, {end}")
 
 		return self.rangeSearchAux(ini, end)
-	
+
 	def delete(self, key:any):
 		self.logger.warning(f"DELETING: {key}")
 		pass
-		
+
 	def rangeSearchAux(self, ini, end) -> list[int]:
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):
