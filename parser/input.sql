@@ -98,6 +98,14 @@ CREATE TABLE test5 (
 
 INSERT INTO test5 VALUES ('A', 10, (1.0, 2.0));
 
+INSERT INTO lugares VALUES
+  (1, (12.046374, 77.042793), 'Plaza Mayor');
+INSERT INTO lugares VALUES
+  (2, (12.043180, 77.028240), 'Miraflores');
+INSERT INTO lugares VALUES
+  (3, (12.120000, 77.030000), 'Barranco');
+
+  
 INSERT INTO test5 VALUES ('B', 20, (3.5, 1.5));
 
 INSERT INTO test5 VALUES ('C', 30, (5.0, 5.0));

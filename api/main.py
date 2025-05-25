@@ -55,6 +55,7 @@ def query(q: Query):
         total = len(result['records'])
     else:
         total = 0
+    
     return {
         'data': resultPagination,
         'total': total,

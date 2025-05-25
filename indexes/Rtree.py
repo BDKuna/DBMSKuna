@@ -45,6 +45,8 @@ class MBR:
         self.ymin = ymin
         self.xmax = xmax
         self.ymax = ymax
+        if(xmin > xmax  or ymin > ymax):
+            raise Exception("Coordinates must not have minimums more than maximums")
 
     def bounds(self):
         return (self.xmin, self.ymin, self.xmax, self.ymax)
@@ -107,14 +109,7 @@ class RTreeIndex:
             IndexType.RTREE
         )
         path = path[:-4]  # quitar .dat
-
-        # 1) Limpia siempre cualquier .idx/.dat/.opt previo
-        for ext in ('.idx', '.dat', '.opt'):
-            try:
-                os.remove(path + ext)
-            except OSError:
-                pass
-            
+        
         # RecordFile de la tabla
         self.rf = RecordFile(table_schema)
 
@@ -208,7 +203,7 @@ class RTreeIndex:
 
     def rangeSearch(self, region) -> list[int]:
         """Rango espacial: MBR o Circle"""
-        if self.logger: self.logger.warning(f"RANGE SEARCHING: {region}")
+        self.logger.warning(f"RANGE SEARCHING: {region}")
         if isinstance(region, MBR):
             return list(self.idx.intersection(region.bounds()))
         if isinstance(region, Circle):

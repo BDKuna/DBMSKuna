@@ -247,7 +247,7 @@ class ExtendibleHashTree:
 
     def _hash_bits(self, key) -> str:
         if isinstance(key, str):
-            idx = int.from_bytes(hashlib.sha256(key.encode()).digest()) % self.M
+            idx = int.from_bytes(hashlib.sha256(key.encode()).digest(), byteorder='little') % self.M
         else:
             idx = hash(key) % self.M
         return format(idx, f'0{self.max_depth}b')
