@@ -106,7 +106,7 @@ class RTreeIndex:
             column.name,
             IndexType.RTREE
         )
-        path = path[:-4]  # quitar .idx
+        path = path[:-4]  # quitar .dat
 
         # 1) Limpia siempre cualquier .idx/.dat/.opt previo
         for ext in ('.idx', '.dat', '.opt'):
