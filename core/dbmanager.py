@@ -50,22 +50,17 @@ class DBManager:
                 match index_type:
                     case IndexType.AVL:
                         index = AVLTree(table_schema, column)
-                        pass
                     case IndexType.ISAM:
                         index = ISAMIndex(table_schema, column)
                         index.build_index()
-                        pass
                     case IndexType.HASH:
                         index = ExtendibleHashTree(table_schema, column)
-                        pass
                     case IndexType.BTREE:
                         index = BPlusTree(table_schema, column)
                     case IndexType.RTREE:
                         index = RTreeIndex(table_schema, column)
-                        pass
                     case IndexType.NONE:
                         index = NoIndex(table_schema, column)
-                        pass
                     case _:
                         pass
         self.indexes[index_name] = index
@@ -106,8 +101,6 @@ class DBManager:
         return a & b
 
     def bitmap_not(self, a : bitarray) -> bitarray:
-        print(a)
-        print(~a)
         return ~a
     
     def bitmap_difference(self, a : bitarray, b : bitarray) -> bitarray:

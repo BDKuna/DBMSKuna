@@ -3,6 +3,7 @@
 import os, struct, math
 from core.schema import TableSchema, Column, IndexType
 from core import utils
+from core import stats
 from core.record_file import RecordFile
 import logger
 
@@ -143,10 +144,12 @@ class ISAMFile:
         with open(self.filename, "r+b") as f:
             f.seek(0)
             f.write(self.HEADER_STRUCT.pack(leaf_factor, index_factor))
+            stats.count_write()
 
     def read_header(self):
         with open(self.filename, "rb") as f:
             lf, ix = self.HEADER_STRUCT.unpack(f.read(self.HEADER_SIZE))
+            stats.count_read()
         return lf, ix
 
     def _fmt_root(self):
@@ -166,6 +169,7 @@ class ISAMFile:
         with open(self.filename, "rb") as f:
             f.seek(self._offset_root())
             buf = f.read(size)
+            stats.count_read()
         # desempacar
         hdr = buf[:IndexPage.HSIZE]
         page_num = struct.unpack(IndexPage.HEADER_FMT, hdr)[0]
@@ -181,6 +185,7 @@ class ISAMFile:
         with open(self.filename, "r+b") as f:
             f.seek(self._offset_root())
             f.write(page.pack())
+            stats.count_write()
 
     def _offset_level1(self):
         return self.HEADER_SIZE + self._size_root()
@@ -191,6 +196,7 @@ class ISAMFile:
         with open(self.filename, "rb") as f:
             f.seek(off)
             buf = f.read(lvl_size)
+            stats.count_read()
         # desempacar idéntico a root
         hdr = buf[:IndexPage.HSIZE]
         page_num = struct.unpack(IndexPage.HEADER_FMT, hdr)[0]
@@ -208,6 +214,7 @@ class ISAMFile:
         with open(self.filename, "r+b") as f:
             f.seek(off)
             f.write(page.pack())
+            stats.count_write()
 
     def _offset_leaves(self):
         # después de ROOT + (index_factor) páginas nivel1
@@ -239,6 +246,7 @@ class ISAMFile:
         with open(self.filename, "r+b") as f:
             f.seek(0, os.SEEK_END)
             f.write(page.pack())
+            stats.count_write()
 
     def read_leaf_page(self, leaf_idx: int) -> 'LeafPage':
         lf, ix = self.read_header()
@@ -247,6 +255,7 @@ class ISAMFile:
         with open(self.filename, "rb") as f:
             f.seek(off)
             buf = f.read(sz)
+            stats.count_read()
         # desempacar
         pn, nxt, nof = struct.unpack(LeafPage.HEADER_FMT, buf[:LeafPage.HSIZE])
         recs = []
@@ -263,6 +272,7 @@ class ISAMFile:
         with open(self.filename, "r+b") as f:
             f.seek(off)
             f.write(page.pack())
+            stats.count_write()
 
     def write_leaf_page_at(self, leaf_num: int,
                            records: list[LeafRecord], next_page: int,
@@ -292,6 +302,7 @@ class ISAMFile:
         with open(self.filename, "r+b") as f:
             f.seek(leaf_off + leaf_num * leaf_sz)
             f.write(page.pack())
+            stats.count_write()
 
     def copy_to_leaf_records(self, rf: RecordFile):
         """
@@ -323,6 +334,7 @@ class ISAMFile:
                 f.seek(0, os.SEEK_END)
                 if f.tell() < leaves_off:
                     f.write(b'\x00' * (leaves_off - f.tell()))
+                    stats.count_write()
                 f.seek(leaves_off)
                 # rellenar con hojas vacías hasta p
                 while reg_pages < p:
@@ -349,6 +361,7 @@ class ISAMFile:
             f.seek(0, os.SEEK_END)
             if f.tell() < leaves_off:
                 f.write(b'\x00' * (leaves_off - f.tell()))
+                stats.count_write()
             f.seek(leaves_off)
 
             # 4a) caso: caben en p hojas regulares

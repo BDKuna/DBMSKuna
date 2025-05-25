@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logger
 from core.schema import TableSchema, Column, IndexType, DataType
 from core import utils
-
+from core import stats
 
 class AVLNode:
     def __init__(self, column: Column, val, pointer: int = -1, left: int = -1, right: int = -1, height: int = 0):
@@ -59,19 +59,23 @@ class AVLFile:
     def _initialize_file(self):
         with open(self.filename, 'rb+') as file:
             header = file.read(self.HEADER_SIZE)
+            stats.count_read()
             if not header:
                 self.logger.fileIsEmpty(self.filename)
                 self.root = -1
                 header = struct.pack(self.HEADER_FORMAT, self.root)
                 file.write(header)
+                stats.count_write()
             else:
                 self.root = struct.unpack(self.HEADER_FORMAT, header)[0]
 
     def read(self,pos:int) -> AVLNode | None:
+
         with open(self.filename, "rb") as file:
             offset = self.HEADER_SIZE + pos * self.NODE_SIZE
             file.seek(offset)
             data = file.read(self.NODE_SIZE)
+            stats.count_read()
             if not data or len(data) < self.NODE_SIZE:
                 return None
             node = AVLNode.unpack(data, self.column)
@@ -88,6 +92,7 @@ class AVLFile:
             else:
                 offset = self.HEADER_SIZE + pos * self.NODE_SIZE
                 file.seek(offset)
+            stats.count_write()
             file.write(data)
             self.logger.writingNode(self.filename, pos, node.val, node.right, node.left, node.height)
             return pos
@@ -104,6 +109,7 @@ class AVLFile:
             with open(self.filename, "rb") as file:
                 file.seek(0)
                 data = file.read(self.HEADER_SIZE)
+                stats.count_read()
                 self.root = struct.unpack("i", data)[0]
                 self.logger.readingHeader(self.filename, self.root)
                 return self.root
@@ -113,6 +119,7 @@ class AVLFile:
         with open(self.filename, "rb+") as file:
             file.seek(0)
             file.write(struct.pack("i", self.root))
+            stats.count_write()
             self.logger.writingHeader(self.filename, self.root)
 
 class AVLTree:
