@@ -7,6 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logger
 from core.schema import TableSchema, Column, DataType, IndexType
 from core import utils
+from core import stats
 
 class NodeBPlus:
 	BLOCK_FACTOR = 3
@@ -162,6 +163,7 @@ class BPlusFile:
 		with open(filename, "wb") as file:
 			header = -1 # root
 			file.write(struct.pack("i", header))
+			stats.count_write()
 	
 	def readBucket(self, pos: int) -> NodeBPlus:
 		if(pos == -1):
@@ -170,6 +172,7 @@ class BPlusFile:
 			offset = self.HEADER_SIZE + pos * self.NODE_SIZE
 			file.seek(offset)
 			data = file.read(self.NODE_SIZE)
+			stats.count_read()
 			if not data or len(data) < self.NODE_SIZE:
 				self.logger.invalidPosition(self.filename, pos)
 				raise Exception(f"Invalid bucket position: {pos}")
@@ -188,6 +191,7 @@ class BPlusFile:
 				offset = self.HEADER_SIZE + pos * self.NODE_SIZE
 				file.seek(offset)
 			file.write(data)
+			stats.count_write()
 			self.logger.writingBucket(self.filename, pos, node.keys)
 			return pos		
 
@@ -195,6 +199,7 @@ class BPlusFile:
 		with open(self.filename, "rb") as file:
 			file.seek(0)
 			data = file.read(self.HEADER_SIZE)
+			stats.count_read()
 			rootPosition = struct.unpack("i", data)[0]
 			self.logger.readingHeader(self.filename, rootPosition)
 			return rootPosition
@@ -203,6 +208,7 @@ class BPlusFile:
 		with open(self.filename, "rb+") as file:
 			file.seek(0)
 			file.write(struct.pack("i", rootPosition))
+			stats.count_write()
 			self.logger.writingHeader(self.filename, rootPosition)
 
 
