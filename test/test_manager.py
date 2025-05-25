@@ -36,6 +36,8 @@ class MyTestCase(unittest.TestCase):
                 else:
                     self.columnas.append(Column(f'col{i}', data_type=tipo, is_primary=False, index_type=idx))
                 i += 1
+        # Add a Rtree index for the last column
+        self.columnas.append(Column(f'col{i}', data_type=DataType.VARCHAR, is_primary=False, index_type=IndexType.RTREE, varchar_length=20))
         # Define primary key as first column with BTREE
         self.columnas[0] = Column('col1', data_type=DataType.INT, is_primary=True, index_type=IndexType.BTREE)
 
@@ -58,6 +60,8 @@ class MyTestCase(unittest.TestCase):
             if col.is_primary:
                 row.append(self.pk)
                 self.pk += 1
+            elif col.index_type == IndexType.RTREE:
+                row.append(f'({round(random.random(),3)},{round(random.random(),3)})')
             elif col.data_type == DataType.INT:
                 row.append(random.randint(*int_range))
             elif col.data_type == DataType.FLOAT:
