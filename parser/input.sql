@@ -30,18 +30,65 @@ DELETE FROM ventas WHERE fecha < '2023-01-01';*/
 
 --DROP TABLE alumnos;
 
-/*CREATE TABLE alumnos (
+/*
+CREATE TABLE alumnos (
   codigo INT PRIMARY KEY INDEX HASH,
   nombre VARCHAR(20) INDEX BTREE,
   ciclo INT INDEX BTREE
-);*/
+);
 
-/*
+
 CREATE TABLE test (
   col1 INT PRIMARY KEY INDEX BTREE,
   col2 FLOAT
 );
 */
 
---INSERT INTO test VALUES (442, 4.42);
-SELECT * FROM test WHERE col2 >= 1.24
+/*
+CREATE TABLE test2 (
+  col1 VARCHAR(20) PRIMARY KEY INDEX HASH,
+  col2 INT INDEX AVL
+);
+*/
+
+/* 
+-- 1) Redefinimos test2 con una columna espacial "coord"
+    DROP TABLE IF EXISTS test2;
+
+CREATE TABLE test2 (
+  col1 VARCHAR(20) PRIMARY KEY INDEX HASH,
+  col2 INT INDEX AVL,
+  coord VARCHAR(20) /* guarda '(x,y)' */ INDEX RTREE
+);
+
+-- 2) Insertamos algunos puntos (x,y)
+INSERT INTO test2 VALUES
+  ('A', 10, '(1.0,2.0)'),
+  ('B', 20, '(3.5,1.5)'),
+  ('C', 30, '(5.0,5.0)'),
+  ('D', 40, '(2.2,3.8)'),
+  ('E', 50, '(4.4,0.9)');
+
+-- 3) Crea el índice
+CREATE INDEX idx_test2_coord
+  ON test2 USING RTREE (coord);
+
+-- 4) Consulta por rango:  
+SELECT col1, col2, coord
+FROM test2
+WHERE RTREE_RANGE(idx_test2_coord,
+                  1.0, 1.0,    -- xmin, ymin
+                  4.0, 4.0);   -- xmax, ymax
+
+-- 5) Consulta k-NN: 
+SELECT col1, col2, coord
+FROM test2
+WHERE RTREE_KNN(idx_test2_coord,
+                3.0, 2.0,    -- x0, y0
+                3);          -- k = 3 vecinos
+
+DROP INDEX idx_test2_coord ON test2;
+*/
+
+    
+SELECT * FROM test2 WHERE col1 = 'hola'

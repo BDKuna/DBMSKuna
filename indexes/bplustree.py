@@ -11,9 +11,13 @@ from core import stats
 
 class NodeBPlus:
 	BLOCK_FACTOR = 3
-	def __init__(self, column: Column, keys:list = [], pointers:list = [], isLeaf:bool = False, size:int = 0, nextNode:int = -1):
+	def __init__(self, column: Column, keys=None, pointers=None, isLeaf:bool = False, size:int = 0, nextNode:int = -1):
+		if pointers is None:
+			pointers = []
+		if keys is None:
+			keys = []
 		self.column = column
-		self.FORMAT = utils.calculate_column_format(column) * self.BLOCK_FACTOR + "i" * (self.BLOCK_FACTOR + 1) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
+		self.FORMAT = "<" + str(utils.calculate_column_format(column) * self.BLOCK_FACTOR) + str("i" * (self.BLOCK_FACTOR + 1)) + "iii" # num keys + 1 = num pointers, + isLeaf, size, nextNode
 		self.NODE_SIZE = struct.calcsize(self.FORMAT)
 		if isLeaf:
 			if len(pointers) != len(keys):
@@ -22,6 +26,7 @@ class NodeBPlus:
 			if len(pointers) != len(keys) + 1:
 				raise Exception("Creating internal node, number of pointers must be one more than number of keys")
 		
+
 		empty_key = utils.get_empty_value(self.column)
 		while len(keys) < self.BLOCK_FACTOR:
 			keys.append(empty_key)
@@ -115,6 +120,8 @@ class NodeBPlus:
 			start = i * key_size
 			end = start + key_size
 			val = struct.unpack(key_fmt, record[start:end])[0]
+			if column.data_type == DataType.FLOAT:
+				val = round(val,6) #float precision
 			if column.data_type == DataType.VARCHAR:
 				val = val.decode().strip("\x00")
 			keys.append(val)
@@ -139,7 +146,7 @@ class BPlusFile:
 		self.filename = utils.get_index_file_path(schema.table_name, column.name, IndexType.BTREE)
 		self.logger = logger.CustomLogger(f"BPLUSFILE-{schema.table_name}-{column.name}".upper())
 		
-		self.NODE_SIZE = struct.calcsize(utils.calculate_column_format(column) * NodeBPlus.BLOCK_FACTOR + "i" * (NodeBPlus.BLOCK_FACTOR + 1) + "iii")
+		self.NODE_SIZE = struct.calcsize("<" + (utils.calculate_column_format(column) * NodeBPlus.BLOCK_FACTOR) + ("i" * (NodeBPlus.BLOCK_FACTOR + 1)) + "iii")
 		#self.logger.logger.setLevel(logging.WARNING)
 
 		if not os.path.exists(self.filename):
@@ -311,7 +318,7 @@ class BPlusTree:
 		while(not node.isLeaf):
 			firstPos = node.pointers[0]
 			node = self.indexFile.readBucket(firstPos)
-		
+
 		pointers: list[int] = []
 		while(True):
 			assert(node.isLeaf)
@@ -342,11 +349,11 @@ class BPlusTree:
 		self.logger.warning(f"RANGE-SEARCH: {ini}, {end}")
 
 		return self.rangeSearchAux(ini, end)
-	
+
 	def delete(self, key:any):
 		self.logger.warning(f"DELETING: {key}")
 		pass
-		
+
 	def rangeSearchAux(self, ini, end) -> list[int]:
 		rootPos = self.indexFile.getHeader()
 		if(rootPos == -1):

@@ -2,11 +2,17 @@ import sys, os
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
+import subprocess
 
 from fastapi import FastAPI
 from fastapi import HTTPException
-from parser import parser
 from fastapi.middleware.cors import CORSMiddleware
+
+try:
+    from parser import parser
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "bitarray"])
+    from parser import parser
 
 app = FastAPI()
 app.add_middleware(

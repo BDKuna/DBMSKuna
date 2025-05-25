@@ -779,7 +779,8 @@ class Interpreter:
         if not sql:
             self.error("Invalid SQL")
         for stmt in sql.stmt_list:
-            return self.interpret_stmt(stmt)
+            result = self.interpret_stmt(stmt)
+        return result
 
     def interpret_stmt(self, stmt : Stmt):
         stmt_type = type(stmt)

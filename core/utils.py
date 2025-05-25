@@ -66,7 +66,7 @@ def get_max_value(column: Column):
         raise NotImplementedError(f"Unsupported type {column.data_type}")
 
 
-def calculate_column_format(column: Column):
+def calculate_column_format(column: Column)->str:
     if column.data_type == DataType.INT:
         return "i"
     elif column.data_type == DataType.FLOAT:
