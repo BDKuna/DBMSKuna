@@ -255,7 +255,7 @@ class ExtendibleHashTree:
 
     def _hash_bits(self, key) -> str:
         if isinstance(key, str):
-            idx = int.from_bytes(hashlib.sha256(key.encode()).digest()) % self.M
+            idx = int.from_bytes(hashlib.sha256(key.encode()).digest(), byteorder="big") % self.M
         else:
             idx = hash(key) % self.M
         return format(idx, f'0{self.max_depth}b')
@@ -405,3 +405,8 @@ class ExtendibleHashTree:
     def close(self):
         # opcionalmente asegurar persistencia
         self._save_tree()
+
+    def clear(self):
+        self.logger.info("Cleaning data, removing files")
+        os.remove(self.data_path)
+        os.remove(self.tree_path)

@@ -1118,3 +1118,7 @@ class ISAMIndex:
             leaf_num = leaf.next_page
 
         return "\n".join(s)
+    
+    def clear(self):
+        self.logger.info("Cleaning data, removing files")
+        os.remove(self.rf.filename)
