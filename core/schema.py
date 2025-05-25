@@ -5,13 +5,13 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 from core.conditionschema import ConditionSchema
 
-
 class DataType(Enum):
     INT = auto()
     FLOAT = auto()
     VARCHAR = auto()
     DATE = auto()
     BOOL = auto()
+    POINT = auto()
 
     def __str__(self):
         return self.name
@@ -22,7 +22,7 @@ class IndexType(Enum):
     HASH = auto()
     BTREE = auto()
     RTREE = auto()
-    SEQ = auto()
+    BRIN = auto()
     NONE = auto()
 
     def __str__(self):
@@ -78,9 +78,9 @@ class TableSchema:
             case IndexType.RTREE:
                 from indexes.Rtree import RTreeIndex
                 return RTreeIndex(self, column)
-            case IndexType.SEQ:
+            case IndexType.BRIN:
                 pass
-                # SEQ(table_schema, column)
+                # BRIN(table_schema, column)
             case IndexType.NONE:
                 return None
             case _:
@@ -102,11 +102,14 @@ class TableSchema:
         return f"TableSchema(table_name={self.table_name}, columns={self.columns})"
 
 class SelectSchema:
-    def __init__(self, table_name: str = None, condition_schema: ConditionSchema = None, all : bool = None, column_list: list[str] = None):
+    def __init__(self, table_name: str = None, condition_schema: ConditionSchema = None, all : bool = None, column_list: list[str] = None, order_by : str = None, asc : bool = True, limit : int = None):
         self.table_name = table_name
         self.condition_schema = condition_schema
         self.all = all
         self.column_list = column_list if column_list else []
+        self.order_by = order_by
+        self.asc = asc
+        self.limit = limit
 
 class DeleteSchema:
     def __init__(self, table_name : str = None, condition_schema : ConditionSchema = None):

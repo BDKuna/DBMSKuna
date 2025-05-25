@@ -24,7 +24,10 @@ class Record:
 	def pack(self):
 		packed = []
 		for col, val in zip(self.schema.columns, self.values):
-			if col.data_type == DataType.VARCHAR:
+			if col.data_type == DataType.POINT:
+				packed.append(val[0])
+				packed.append(val[1])
+			elif col.data_type == DataType.VARCHAR:
 				packed.append(utils.pad_str(val, col.varchar_length))
 			else:
 				packed.append(val)
@@ -34,12 +37,28 @@ class Record:
 	def unpack(cls, schema:TableSchema, raw_bytes):
 		format = utils.calculate_record_format(schema.columns)
 		values = list(struct.unpack(format, raw_bytes))
-		for i, col in enumerate(schema.columns):
+		final_values = []
+		i = 0
+		col_idx = 0
+		while col_idx < len(schema.columns):
+			col = schema.columns[col_idx]
 			if col.data_type == DataType.VARCHAR:
-				values[i] = values[i].decode().strip("\x00")
-			if col.data_type == DataType.FLOAT:
-				values[i] = round(float(values[i]), 6)
-		return cls(schema, values)
+				final_values.append(values[i].decode().strip("\x00"))
+				i += 1
+			elif col.data_type == DataType.FLOAT:
+				final_values.append(round(float(values[i]), 6))
+				i += 1
+			elif col.data_type == DataType.POINT:
+				x = round(float(values[i]), 6)
+				y = round(float(values[i+1]), 6)
+				final_values.append((x, y))
+				i += 2
+			else:
+				final_values.append(values[i])
+				i += 1
+			col_idx += 1
+
+		return cls(schema, final_values)
 
 	def __str__(self):
 		attrs = [
