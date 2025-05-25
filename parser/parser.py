@@ -589,9 +589,22 @@ class Parser:
                 self.error("expected ')' after k value")
             simple_condition.right = ConditionValue((x, y, k))
         else:
-            if not self.match_values():
-                self.error("expected a value after conditional operator")
-            simple_condition.right = ConditionValue(self.str_into_type(self.previous.lexema, self.previous))
+            if self.match(Token.Type.LPAR): # POINT
+                if not self.match(Token.Type.FLOATVAL):
+                    self.error("expected a valid float value por x coordinate on POINT declaration")
+                x = self.str_into_type(self.previous.lexema, self.previous)
+                if not self.match(Token.Type.COMMA):
+                    self.error("expected comma after x coordiante")
+                if not self.match(Token.Type.FLOATVAL):
+                    self.error("expected a valid float value por y coordinate on POINT declaration")
+                y = self.str_into_type(self.previous.lexema, self.previous)
+                if not self.match(Token.Type.RPAR):
+                    self.error("expected ')' after y coordinate")
+                simple_condition.right = ConditionValue((x, y))
+            else:
+                if not self.match_values():
+                    self.error("expected a value after conditional operator")
+                simple_condition.right = ConditionValue(self.str_into_type(self.previous.lexema, self.previous))
         return simple_condition
 
 

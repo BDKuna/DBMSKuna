@@ -239,9 +239,16 @@ class DBManager:
             for record in result:
                 value_map = {col.name: val for col, val in zip(table.columns, record.values)}
                 record.values = [value_map[name] for name in select_schema.column_list]
+        final_result = []
+        for record in result:
+            if record:
+                for i, value in enumerate(record.values):
+                    if isinstance(value, tuple):
+                        record.values[i] = str(value)
+                final_result.append(record.values)
         return {
             'columns': column_names if select_schema.all else select_schema.column_list,
-            'records': [record.values for record in result if record]
+            'records': final_result
         }
 
     def select_condition(self, table_schema : TableSchema, condition : Condition) -> bitarray:
@@ -281,6 +288,16 @@ class DBManager:
                                 self.error(f"value '{condition.right.value}' is not a valid knn definition")
                             index = self.get_index(table_schema, condition.left.column_name)
                             return self.list_to_bitmap(index.knnSearch(condition.right.value[0], condition.right.value[1], condition.right.value[2]))
+                        case BinaryOp.EQ:
+                            if utils.get_data_type(condition.right.value) != DataType.POINT:
+                                self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
+                            index = self.get_index(table_schema, condition.left.column_name)
+                            return self.list_to_bitmap(index.search(condition.right.value))
+                        case BinaryOp.NEQ:
+                            if utils.get_data_type(condition.right.value) != DataType.POINT:
+                                self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
+                            index = self.get_index(table_schema, condition.left.column_name)
+                            return self.bitmap_not(self.list_to_bitmap(index.search(condition.right.value)))
                         case _:
                             self.error("operation not supported for POINT type")
                 if column.data_type != utils.get_data_type(condition.right.value):
