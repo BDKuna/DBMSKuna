@@ -7,6 +7,7 @@ import subprocess
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import time
 
 try:
     from parser import parser
@@ -33,8 +34,11 @@ class Query(BaseModel):
 @app.post("/sql/")
 def query(q: Query):
     try:
+        start = time.time()
         result, message = parser.execute_sql(q.query)
+        end = time.time()
     except RuntimeError as e:
+        end = time.time()
         result, message = None, str(e)
         pass
         #raise HTTPException(status_code=400, detail=str(e))
@@ -54,5 +58,6 @@ def query(q: Query):
     return {
         'data': resultPagination,
         'total': total,
-        'message': message
+        'message': message,
+        'execution_time': end - start
     }
