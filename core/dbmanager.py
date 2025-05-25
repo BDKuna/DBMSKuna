@@ -343,11 +343,28 @@ class DBManager:
         path = f"{self.tables_path}/{table_name}"
         self.save_table_schema(table_schema, path)
 
+        record_file = RecordFile(table_schema)
+        pos = 0
+        max_pos = record_file.max_id()
+
+        indexes = table_schema.get_indexes()
+        column_index = table_schema.columns.index(column)  # posición de la columna en el esquema
+        index_structure = indexes[column.name]  # estructura del índice recién creado
+
+        while pos < max_pos:
+            record = record_file.read(pos)
+            if record is not None:  # Evita registros borrados si usas lista libre
+                value = record.values[column_index]
+                index_structure.insert(pos, value)
+            pos += 1
+            
     def drop_index(self, table_name : str, index_name : str) -> None:
         table_schema = self.get_table_schema(table_name)
         for column in table_schema.columns:
             if column.index_name == index_name:
                 index = self.get_index(table_schema, column.name)
+                if column.index_type == IndexType.NONE:
+                    self.error("Cannot drop column with not index")
                 index.clear()
                 column.index_type = IndexType.NONE
                 path = f"{self.tables_path}/{table_schema.table_name}"
@@ -386,21 +403,3 @@ class DBManager:
                     self.insert(table_name, converted, header)
                 except Exception as e:
                     raise RuntimeError(f"Error en fila {row_num}: {e}")
-
-
-def test():
-    dbmanager = DBManager()
-    import schemabuilder
-    builder = schemabuilder.TableSchemaBuilder()
-    dbmanager.drop_table("test")
-    builder.set_name("test")
-    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=True, index_type=IndexType.BTREE)
-    builder.add_column(name="value", data_type=DataType.FLOAT, is_primary_key=False)
-    builder.add_column(name="label", data_type=DataType.VARCHAR, is_primary_key=False, varchar_length=20)
-    
-    schema:TableSchema = builder.get()
-    dbmanager.create_table(schema)
-
-    dbmanager.import_csv(schema.table_name, "basic1.csv")
-
-#test()
