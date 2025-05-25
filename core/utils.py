@@ -102,6 +102,13 @@ def convert_value(value: str, col_type:DataType) -> any:
         return value.lower() in ('1', 'true', 'yes')
     elif col_type == DataType.VARCHAR:
         return value
+    elif col_type == DataType.POINT:
+        try:
+            value = value.strip("()")
+            x_str, y_str = value.split(",")
+            return (float(x_str), float(y_str))
+        except Exception as e:
+            raise ValueError(f"Valor de punto inválido: {value}") from e
     else:
         raise ValueError(f"Tipo de columna no soportado: {col_type}")
 

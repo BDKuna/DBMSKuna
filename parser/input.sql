@@ -139,3 +139,18 @@ coord WITHIN CIRCLE (2.0, 2.0, 2.0);
 SELECT col1, col2, coord
 FROM test5
 WHERE coord KNN (3.0, 2.0, 1);
+
+
+
+CREATE TABLE basic(
+  id int PRIMARY KEY,
+  value float index hash,
+  label varchar(20) index hash
+)
+
+CREATE TABLE basic2(
+  id int PRIMARY KEY,
+  value float,
+  label varchar(20),
+  puntos POINT INDEX RTREE
+)

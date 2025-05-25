@@ -475,3 +475,10 @@ class DBManager:
                     self.insert(table_name, converted, header)
                 except Exception as e:
                     raise RuntimeError(f"Error en fila {row_num}: {e}")
+
+def test():
+    dbmanager = DBManager()
+
+    dbmanager.import_csv("basic2", "basic2.csv")
+
+test()
