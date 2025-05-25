@@ -81,6 +81,18 @@ def calculate_column_format(column: Column)->str:
 def pad_str(s:str, length:int):
     return s.encode().ljust(length, b'\x00')
 
+def convert_value(value: str, col_type:DataType) -> any:
+    if col_type == DataType.INT:
+        return int(value)
+    elif col_type == DataType.FLOAT:
+        return float(value)
+    elif col_type == DataType.BOOL:
+        return value.lower() in ('1', 'true', 'yes')
+    elif col_type == DataType.VARCHAR:
+        return value
+    else:
+        raise ValueError(f"Tipo de columna no soportado: {col_type}")
+
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'tables')
 
