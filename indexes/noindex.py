@@ -54,3 +54,5 @@ class NoIndex:
 			pos += 1
 		return res
 	
+	def clear(self):
+		pass

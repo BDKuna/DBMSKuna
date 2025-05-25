@@ -9,6 +9,7 @@ import pickle
 from core.schema import TableSchema, Column, IndexType
 from core import utils
 import logger
+from core import stats
 import hashlib
 
 # -------------
@@ -27,10 +28,12 @@ class Record:
         return f"Record(key={self.key!r}, ptr={self.pointer!r})"
 
     def to_bytes(self):
+        stats.count_write()
         return pickle.dumps((self.key, self.pointer))
 
     @classmethod
     def from_bytes(cls, data):
+        stats.count_read()
         k, p = pickle.loads(data)
         return cls(k, p)
 
@@ -149,10 +152,12 @@ class FileManager:
             # inicializar header: next_bucket_id=0, capacidad
             with open(self.path, "wb") as f:
                 f.write(struct.pack(self.HEADER_FMT, 0, self.capacity, b"\x00"*8))
+                stats.count_write()
             self.next_bucket_id = 0
         else:
             with open(self.path, "rb") as f:
                 nb, cap, _ = struct.unpack(self.HEADER_FMT, f.read(self.HEADER_SIZE))
+                stats.count_read()
                 self.next_bucket_id = nb
                 self.capacity       = cap
 
@@ -160,6 +165,7 @@ class FileManager:
         with open(self.path, "r+b") as f:
             f.seek(0)
             f.write(struct.pack(self.HEADER_FMT, self.next_bucket_id, self.capacity, b"\x00"*8))
+            stats.count_write()
 
     def _bucket_size(self):
         # espacio fijo por bucket
@@ -172,6 +178,7 @@ class FileManager:
     def _read_raw(self, bid: int) -> bytes:
         with open(self.path, "rb") as f:
             f.seek(self._bucket_offset(bid))
+            stats.count_read()
             return f.read(self._bucket_size())
 
     def _write_raw(self, bid: int, data: bytes):
@@ -181,6 +188,7 @@ class FileManager:
         with open(self.path, "r+b") as f:
             f.seek(self._bucket_offset(bid))
             f.write(data)
+            stats.count_write()
 
     def create_bucket(self) -> Bucket:
         bid = self.next_bucket_id
@@ -400,3 +408,8 @@ class ExtendibleHashTree:
     def close(self):
         # opcionalmente asegurar persistencia
         self._save_tree()
+
+    def clear(self):
+        self.logger.info("Cleaning data, removing files")
+        os.remove(self.data_path)
+        os.remove(self.tree_path)

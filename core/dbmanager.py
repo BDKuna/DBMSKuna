@@ -16,6 +16,8 @@ from indexes.Rtree import RTreeIndex, MBR, Circle
 from indexes.ISAMtree import ISAMIndex
 from indexes.noindex import NoIndex
 
+import csv
+
 from core.record_file import Record, RecordFile
 import logger
 
@@ -51,22 +53,17 @@ class DBManager:
                 match index_type:
                     case IndexType.AVL:
                         index = AVLTree(table_schema, column)
-                        pass
                     case IndexType.ISAM:
                         index = ISAMIndex(table_schema, column)
                         index.build_index()
-                        pass
                     case IndexType.HASH:
                         index = ExtendibleHashTree(table_schema, column)
-                        pass
                     case IndexType.BTREE:
                         index = BPlusTree(table_schema, column)
                     case IndexType.RTREE:
                         index = RTreeIndex(table_schema, column)
-                        pass
                     case IndexType.NONE:
                         index = NoIndex(table_schema, column)
-                        pass
                     case _:
                         pass
         self.indexes[index_name] = index
@@ -107,8 +104,6 @@ class DBManager:
         return a & b
 
     def bitmap_not(self, a : bitarray) -> bitarray:
-        print(a)
-        print(~a)
         return ~a
     
     def bitmap_difference(self, a : bitarray, b : bitarray) -> bitarray:
@@ -420,14 +415,63 @@ class DBManager:
         path = f"{self.tables_path}/{table_name}"
         self.save_table_schema(table_schema, path)
 
+        record_file = RecordFile(table_schema)
+        pos = 0
+        max_pos = record_file.max_id()
+
+        indexes = table_schema.get_indexes()
+        column_index = table_schema.columns.index(column)  # posición de la columna en el esquema
+        index_structure = indexes[column.name]  # estructura del índice recién creado
+
+        while pos < max_pos:
+            record = record_file.read(pos)
+            if record is not None:  # Evita registros borrados si usas lista libre
+                value = record.values[column_index]
+                index_structure.insert(pos, value)
+            pos += 1
+            
     def drop_index(self, table_name : str, index_name : str) -> None:
         table_schema = self.get_table_schema(table_name)
         for column in table_schema.columns:
             if column.index_name == index_name:
                 index = self.get_index(table_schema, column.name)
+                if column.index_type == IndexType.NONE:
+                    self.error("Cannot drop column with not index")
                 index.clear()
                 column.index_type = IndexType.NONE
                 path = f"{self.tables_path}/{table_schema.table_name}"
                 self.save_table_schema(table_schema, path)
                 return
         self.error(f"Index with name '{index_name}' on table '{table_name}' doesn't exist")
+
+    def import_csv(self, table_name: str, csv_path: str):
+        # Obtener el esquema de la tabla
+        table_schema: TableSchema = self.get_table_schema(table_name)
+
+        with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            header = next(reader)
+
+            # Validar que las columnas existan en el esquema
+            for col_name in header:
+                if not table_schema.get_column_by_name(col_name):
+                    raise ValueError(f"Columna '{col_name}' no existe en la tabla '{table_name}'")
+
+            # Mapeo de nombre a tipo
+            column_types = [
+                table_schema.get_column_by_name(col_name).data_type for col_name in header
+            ]
+
+            for row_num, row in enumerate(reader, start=2):
+                if not row or all(cell.strip() == '' for cell in row):
+                    continue  # Saltar filas vacías
+
+                try:
+                    # Convertir tipos según el esquema
+                    converted = [
+                        utils.convert_value(value, col_type)
+                        for value, col_type in zip(row, column_types)
+                    ]
+                    self.insert(table_name, converted, header)
+                except Exception as e:
+                    raise RuntimeError(f"Error en fila {row_num}: {e}")
