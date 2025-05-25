@@ -54,19 +54,21 @@ class ColumnDefinition():
         self.varchar_limit = varchar_limit
 
 class CreateTableStmt(Stmt):
-    def __init__(self, table_name : str = None, column_def_list : list[ColumnDefinition] = None):
+    def __init__(self, table_name : str = None, column_def_list : list[ColumnDefinition] = None, if_not_exists: bool = False):
         super().__init__()
         self.table_name = table_name
         self.column_def_list = column_def_list if column_def_list else []
+        self.if_not_exists = if_not_exists
     
     def add_column_definition(self, column_def : ColumnDefinition = None) -> None:
         self.column_def_list.append(column_def)
 
 # <drop-table-stmt> ::= "DROP" "TABLE" <table-name>
 class DropTableStmt(Stmt):
-    def __init__(self, table_name : str = None):
+    def __init__(self, table_name : str = None, if_exists: bool = False):
         super().__init__()
         self.table_name = table_name
+        self.if_exists = if_exists
 
 # <create-index-stmt> ::= "CREATE" "INDEX" <index-name> "ON" <table-name> [ "USING" <index-type> ] "(" <column-list> ")"
 class CreateIndexStmt(Stmt):
@@ -241,6 +243,12 @@ class Parser:
     
     def parse_create_table_stmt(self) -> CreateTableStmt:
         create_table_stmt = CreateTableStmt()
+        if self.match(Token.Type.IF):
+            if not self.match(Token.Type.NOT):
+                self.error("expected NOT keyword after IF keyword")
+            if not self.match(Token.Type.EXISTS):
+                self.error("expected EXISTS keyword after NOT keyword")
+            create_table_stmt.if_not_exists = True
         if not self.match(Token.Type.ID):
             self.error("expected table name after CREATE TABLE keyword")
         create_table_stmt.table_name = self.previous.lexema
@@ -313,6 +321,10 @@ class Parser:
     # <drop-table-stmt> ::= "DROP" "TABLE" <table-name>
     def parse_drop_table_stmt(self) -> DropTableStmt:
         drop_table_stmt = DropTableStmt()
+        if self.match(Token.Type.IF):
+            if not self.match(Token.Type.EXISTS):
+                self.error("expected EXISTS keyword after IF keyword")
+            drop_table_stmt.if_exists = True
         if not self.match(Token.Type.ID):
             self.error("expected table name after DROP TABLE keyword")
         drop_table_stmt.table_name = self.previous.lexema
@@ -952,10 +964,10 @@ class Interpreter:
     def interpret_create_table_stmt(self, stmt : CreateTableStmt):
         column_list = [Column(column_def.column_name, column_def.data_type, column_def.is_primary_key, column_def.index_type, column_def.varchar_limit) for column_def in stmt.column_def_list]
         table_schema = TableSchema(stmt.table_name, column_list)
-        self.dbmanager.create_table(table_schema)
+        self.dbmanager.create_table(table_schema, stmt.if_not_exists)
 
     def interpret_drop_table_stmt(self, stmt : DropTableStmt):
-        self.dbmanager.drop_table(stmt.table_name)
+        self.dbmanager.drop_table(stmt.table_name, stmt.if_exists)
 
     def interpret_insert_stmt(self, stmt : InsertStmt):
         self.dbmanager.insert(stmt.table_name, stmt.value_list, stmt.column_list)

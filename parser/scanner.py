@@ -7,8 +7,8 @@ class Token:
             CREATE, TABLE, DROP, AND, OR, NOT, AS, ORDER, BY, LIMIT, ID, STAR, BETWEEN,
             EQ, NEQ, LT, GT, LE, GE, COMMA, DOT, SEMICOLON, NUMVAL, FLOATVAL, STRINGVAL,
             BOOLVAL, PRIMARY, KEY, DATATYPE, INDEX, ON, USING, INDEXTYPE, ERR, END, 
-            WITHIN, RECTANGLE, CIRCLE, KNN, ASC, DESC
-        ) = range(52)
+            WITHIN, RECTANGLE, CIRCLE, KNN, ASC, DESC, IF, EXISTS
+        ) = range(54)
 
     token_names = [
         "LPAR", "RPAR", "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES",
@@ -16,7 +16,8 @@ class Token:
         "AS", "ORDER", "BY", "LIMIT", "ID", "STAR", "BETWEEN", "EQ", "NEQ", "LT",
         "GT", "LE", "GE", "COMMA", "DOT", "SEMICOLON", "NUMVAL", "FLOATVAL", "STRINGVAL",
         "BOOLVAL", "PRIMARY", "KEY", "DATATYPE", "INDEX", "ON", "USING", "INDEXTYPE",
-        "ERR", "END", "WITHIN", "RECTANGLE", "CIRCLE", "KNN", "ASC", "DESC"
+        "ERR", "END", "WITHIN", "RECTANGLE", "CIRCLE", "KNN", "ASC", "DESC", "IF",
+        "EXISTS"
     ]
 
     def __init__(self, token_type, lexema=""):
@@ -267,7 +268,9 @@ class Scanner:
                     "CIRCLE": Token.Type.CIRCLE,
                     "KNN": Token.Type.KNN,
                     "ASC": Token.Type.ASC,
-                    "DESC": Token.Type.DESC
+                    "DESC": Token.Type.DESC,
+                    "IF": Token.Type.IF,
+                    "EXISTS": Token.Type.EXISTS
                 }
                 if lexema in keywords:
                     return Token(keywords[lexema], lexema if keywords[lexema] in [Token.Type.BOOLVAL, Token.Type.INDEXTYPE, Token.Type.DATATYPE] else "")
