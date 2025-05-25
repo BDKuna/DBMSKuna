@@ -102,11 +102,14 @@ class TableSchema:
         return f"TableSchema(table_name={self.table_name}, columns={self.columns})"
 
 class SelectSchema:
-    def __init__(self, table_name: str = None, condition_schema: ConditionSchema = None, all : bool = None, column_list: list[str] = None):
+    def __init__(self, table_name: str = None, condition_schema: ConditionSchema = None, all : bool = None, column_list: list[str] = None, order_by : str = None, asc : bool = True, limit : int = None):
         self.table_name = table_name
         self.condition_schema = condition_schema
         self.all = all
         self.column_list = column_list if column_list else []
+        self.order_by = order_by
+        self.asc = asc
+        self.limit = limit
 
 class DeleteSchema:
     def __init__(self, table_name : str = None, condition_schema : ConditionSchema = None):
