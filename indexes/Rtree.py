@@ -16,6 +16,8 @@ if root_path not in sys.path:
 from core.record_file import RecordFile
 from core import utils
 from core.schema import IndexType
+import logger
+
 
 # -------------------------
 # Clases de geometría      
@@ -88,6 +90,8 @@ class RTreeIndex:
         self.table_schema = table_schema
         self.column = column
         self.col_idx = table_schema.columns.index(column)
+        self.logger = logger.CustomLogger(f"RTreeIndex-{table_schema.table_name}-{column.name}".upper())
+
 
         # ruta base para .idx/.dat
         path = utils.get_index_file_path(
@@ -95,12 +99,7 @@ class RTreeIndex:
             column.name,
             IndexType.RTREE
         )
-
-        # limpiar índices antiguos si no existen archivos nuevos
-        if not (os.path.exists(path + '.idx') or os.path.exists(path + '.dat')):
-            for ext in ('.idx', '.dat'):
-                try: os.remove(path + ext)
-                except OSError: pass
+        path = path[:-4]  # quitar .idx
 
         # RecordFile de la tabla
         self.rf = RecordFile(table_schema)
@@ -150,6 +149,7 @@ class RTreeIndex:
         """
         Inserta la posición `pos` asociada a `key` (Point, tupla o string).
         """
+        self.logger.warning(f"INSERTING: {key}")
         x, y = self._parse_key(key)
         bbox = (x, y, x, y)
         self.idx.insert(pos, bbox)
@@ -160,6 +160,7 @@ class RTreeIndex:
         """
         Elimina la entrada asociada a `key`. Retorna True si existía.
         """
+        self.logger.warning(f"DELETING: {key}")
         pos = self._key_to_pos.get(key)
         if pos is None:
             return False
@@ -176,6 +177,7 @@ class RTreeIndex:
         """
         Búsqueda puntual: retorna lista con 0 o 1 posiciones.
         """
+        self.logger.warning(f"SEARCHING: {key}")
         pos = self._key_to_pos.get(key)
         return [] if pos is None else [pos]
 
@@ -183,6 +185,7 @@ class RTreeIndex:
         """
         Búsqueda por región: acepta MBR o Circle.
         """
+        self.logger.warning(f"RANGE SEARCHING: {region}")
         if isinstance(region, MBR):
             return self._MBRSearch(region)
         if isinstance(region, Circle):
