@@ -134,25 +134,10 @@ class IndexPage:
         return self.STRUCT.pack(*data)
 
     def find_child_ptr(self, key):
-        records = self.records
-        low = 0
-        high = len(records) - 1
-
-        while low <= high:
-            mid = (low + high) // 2
-            if key < records[mid].key:
-                high = mid - 1
-            else:
-                low = mid + 1
-
-        # Aquí low es el índice del primer registro cuyo key es mayor que `key`
-        if low == 0:
-            return records[0].left
-        elif low > high:
-            # key >= todos los rec.key, ir a la derecha del último registro
-            return records[-1].right
-        else:
-            return records[low].left
+        for rec in self.records:
+            if key < rec.key:
+                return rec.left
+        return self.records[-1].right
 
 
 # --------------------------------------------------------------------

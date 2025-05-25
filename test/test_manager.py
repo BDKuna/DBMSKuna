@@ -28,12 +28,6 @@ class TestISAMSimple(unittest.TestCase):
             print(f"Inserting {row}")
             self.db.insert(self.schema.table_name, row, col_names)
 
-        # Mostrar todos registros
-        schema_select = self.db.get_table_schema(self.schema.table_name)
-        result = self.db.select(schema_select)
-        print("All records:")
-        for rec in result['records']:
-            print(rec)
 
         # Probar búsqueda en ISAMIndex
         index = self.db.get_index(self.schema, "id")
