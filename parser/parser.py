@@ -785,13 +785,13 @@ class Interpreter:
     def interpret_stmt(self, stmt : Stmt):
         stmt_type = type(stmt)
         if stmt_type == SelectStmt:
-            return self.interpret_select_stmt(stmt), "Selection successfull."
+            return self.interpret_select_stmt(stmt), "Selection successful"
         elif stmt_type == CreateTableStmt:
             self.interpret_create_table_stmt(stmt)
-            return None, "Table created successfully."
+            return None, "Table created successfully"
         elif stmt_type == DropTableStmt:
             self.interpret_drop_table_stmt(stmt)
-            return None, "Table dropped successfully."
+            return None, "Table dropped successfully"
         elif stmt_type == InsertStmt:
             self.interpret_insert_stmt(stmt)
             return None, "Insertion successful"
@@ -800,10 +800,10 @@ class Interpreter:
             return None, "Deletion successful"
         elif stmt_type == CreateIndexStmt:
             self.interpret_create_index_stmt(stmt)
-            return None, "Index created successfully."
+            return None, "Index created successfully"
         elif stmt_type == DropIndexStmt:
             self.interpret_drop_index_stmt(stmt)
-            return None, "Index dropped successfully."
+            return None, "Index dropped successfully"
         else:
             self.error("unknown statement type")
 
