@@ -6,7 +6,7 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
-from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema, Point
+from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
 from core import utils
 from indexes.bplustree import BPlusTree
 from indexes.avltree import AVLTree

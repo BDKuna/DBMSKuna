@@ -1,5 +1,5 @@
 import struct
-from core.schema import TableSchema, DataType, Point
+from core.schema import TableSchema, DataType
 from core import utils
 import logger
 import os
@@ -25,8 +25,8 @@ class Record:
 		packed = []
 		for col, val in zip(self.schema.columns, self.values):
 			if col.data_type == DataType.POINT:
-				packed.append(val.x)
-				packed.append(val.y)
+				packed.append(val[0])
+				packed.append(val[1])
 			elif col.data_type == DataType.VARCHAR:
 				packed.append(utils.pad_str(val, col.varchar_length))
 			else:
@@ -51,7 +51,7 @@ class Record:
 			elif col.data_type == DataType.POINT:
 				x = round(float(values[i]), 6)
 				y = round(float(values[i+1]), 6)
-				final_values.append(Point(x, y))
+				final_values.append((x, y))
 				i += 2
 			else:
 				final_values.append(values[i])

@@ -4,9 +4,8 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 from parser.scanner import Token, Scanner
 from core.conditionschema import BinaryOp, Condition, ConditionColumn, ConditionValue, NotCondition, BinaryCondition, BetweenCondition, BooleanColumn
-from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column, Point
+from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column
 from core.dbmanager import DBManager
-from indexes.Rtree import Circle, MBR
 
 class Stmt:
     def __init__(self):
@@ -340,7 +339,7 @@ class Parser:
             y = self.str_into_type(self.previous.lexema, self.previous)
             if not self.match(Token.Type.RPAR):
                 self.error("expected ')' after y coordinate")
-            insert_stmt.add_value(Point(x, y))
+            insert_stmt.add_value((x, y))
         else:
             if not self.match_values():
                 self.error("expected value after '('")
@@ -357,7 +356,7 @@ class Parser:
                 y = self.str_into_type(self.previous.lexema, self.previous)
                 if not self.match(Token.Type.RPAR):
                     self.error("expected ')' after y coordinate")
-                insert_stmt.add_value(Point(x, y))
+                insert_stmt.add_value((x, y))
             else:
                 if not self.match_values():
                     self.error("expected value after comma")

@@ -2,7 +2,7 @@ import os, sys
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
-from core.schema import DataType, Column, Point
+from core.schema import DataType, Column
 
 def calculate_record_format(columns: list[Column]):
     fmt = ""
@@ -30,8 +30,6 @@ def get_data_type(value) -> DataType:
         return DataType.BOOL
     elif isinstance(value, str):
         return DataType.VARCHAR
-    elif isinstance(value, Point):
-        return DataType.POINT
     elif isinstance(value, tuple):
         if len(value) == 4:
             return "rectangle"
@@ -40,6 +38,8 @@ def get_data_type(value) -> DataType:
                 return "circle"
             if isinstance(value[2], int):
                 return "knn"
+        if len(value) == 2:
+            return DataType.POINT
 
 def get_empty_value(column: Column):
     if column.data_type == DataType.INT:

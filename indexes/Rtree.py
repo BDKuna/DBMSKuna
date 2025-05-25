@@ -22,7 +22,19 @@ import logger
 # -------------------------
 # Clases de geometría      
 # -------------------------
-from core.schema import Point
+class Point:
+    """
+    Representa un punto 2D.
+    """
+    def __init__(self, x: float, y: float):
+        self.x = x
+        self.y = y
+
+    def __iter__(self):
+        return iter((self.x, self.y))
+
+    def __repr__(self):
+        return f"Point({self.x}, {self.y})"
 
 class MBR:
     """
