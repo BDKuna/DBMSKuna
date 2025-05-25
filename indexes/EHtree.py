@@ -6,6 +6,7 @@ import pickle
 from core.schema import TableSchema, Column, IndexType
 from core import utils
 import logger
+import hashlib
 
 # -------------
 # Clase Record
@@ -245,7 +246,10 @@ class ExtendibleHashTree:
             pickle.dump(self.root, f)
 
     def _hash_bits(self, key) -> str:
-        idx = hash(key) % self.M
+        if isinstance(key, str):
+            idx = int.from_bytes(hashlib.sha256(key.encode()).digest()) % self.M
+        else:
+            idx = hash(key) % self.M
         return format(idx, f'0{self.max_depth}b')
 
     def _find_leaf_node(self, bits: str) -> TreeNode:
@@ -323,7 +327,8 @@ class ExtendibleHashTree:
         self.logger.warning(f"SEARCHING: {key}")
         bits = self._hash_bits(key)
         leaf = self._find_leaf_node(bits)
-        r    = self.fm.load_bucket(leaf.bucket_id).search(key)
+        cosa = self.fm.load_bucket(leaf.bucket_id)
+        r    = cosa.search(key)
         return [] if r is None else [r.pointer]
 
     def rangeSearch(self, lo, hi) -> list[int]:
