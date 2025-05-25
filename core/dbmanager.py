@@ -1,6 +1,7 @@
 import os, sys, shutil, pickle
 from collections import Counter
 from bitarray import bitarray
+import heapq
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
@@ -113,18 +114,25 @@ class DBManager:
     def bitmap_difference(self, a : bitarray, b : bitarray) -> bitarray:
         return self.bitmap_and(a, self.bitmap_not(b))
     
-    def retrieve_data(self, table_schema : TableSchema, bitmap : bitarray) -> list[Record]:
+    def retrieve_data(self, table_schema : TableSchema, bitmap : bitarray, limit = None) -> list[Record]:
         ids = self.bitmap_to_list(bitmap)
         records = []
         record_file = RecordFile(table_schema)
+        count = 0
         for id in ids:
+            if limit != None and count >= limit:
+                break
             records.append(record_file.read(id))
+            count += 1
         if bitmap[0]:
             id = len(bitmap) -1
             while id < record_file.max_id():
+                if limit != None and count >= limit:
+                    break
                 record = record_file.read(id)
                 records.append(record)
                 id += 1
+                count += 1
         return records
     
     def retrieve_data_and_delete(self, table_schema : TableSchema, bitmap : bitarray) -> list[Record]:
@@ -192,6 +200,8 @@ class DBManager:
         table = self.get_table_schema(select_schema.table_name)
         column_names = [column.name for column in table.columns]
         if not select_schema.all:
+            if select_schema.order_by != None and select_schema.order_by not in column_names:
+                self.error(f"ordered by column '{select_schema.order_by}' doesn't exist")
             nonexistent = [column for column in select_schema.column_list if column not in column_names]
             if nonexistent:
                 self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
@@ -201,7 +211,30 @@ class DBManager:
         else:
             bitmap = bitarray(1)
             bitmap.setall(1)
-        result = self.retrieve_data(table, bitmap)
+        if select_schema.order_by == None:
+            result = self.retrieve_data(table, bitmap, select_schema.limit)
+        else:
+            result = self.retrieve_data(table, bitmap)
+            for i, column in enumerate(column_names):
+                if select_schema.order_by == column:
+                    ordered_column_num = i
+                    break
+            if select_schema.limit != None:
+                if select_schema.limit > len(result) / 2:
+                    if select_schema.asc:
+                        result = sorted(result, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
+                    else:
+                        result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
+                else:
+                    if select_schema.asc:
+                        result = heapq.nsmallest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
+                    else:
+                        result = heapq.nlargest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
+            else:
+                if select_schema.asc:
+                    result = sorted(result, key=lambda x : x.values[ordered_column_num])
+                else:
+                    result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])
         if not select_schema.all:
             for record in result:
                 value_map = {col.name: val for col, val in zip(table.columns, record.values)}

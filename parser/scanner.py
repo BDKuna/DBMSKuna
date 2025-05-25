@@ -79,6 +79,8 @@ class Scanner:
                         self.line += 1
                         self.pos = 1
                         state = 0
+                    elif c.isdigit():
+                        state = 1
                     else:
                         return Token(Token.Type.ERR)
                 elif c == '/':

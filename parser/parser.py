@@ -12,12 +12,15 @@ class Stmt:
         pass
 
 class SelectStmt(Stmt):
-    def __init__(self, table_name : str = None, condition : Condition = None, all : bool = False, column_list : list[str] = None):
+    def __init__(self, table_name : str = None, condition : Condition = None, all : bool = False, column_list : list[str] = None, order_by : str = None, asc : bool = True, limit : int = None):
         super().__init__()
         self.table_name = table_name
         self.condition = condition
         self.all = all
         self.column_list = column_list if column_list else []
+        self.order_by = order_by
+        self.asc = asc
+        self.limit = limit
 
     def add_column(self, column_name : str) -> None:
         self.column_list.append(column_name)
@@ -217,6 +220,20 @@ class Parser:
         select_stmt.table_name = self.previous.lexema
         if self.match(Token.Type.WHERE):
             select_stmt.condition = self.parse_or_condition()
+        if self.match(Token.Type.ORDER):
+            if not self.match(Token.Type.BY):
+                self.error("expected BY keyword after ORDER keyword")
+            if not self.match(Token.Type.ID):
+                self.error("expected column name in ORDER BY clause")
+            select_stmt.order_by = self.previous.lexema
+            if self.match(Token.Type.ASC):
+                select_stmt.asc = True
+            elif self.match(Token.Type.DESC):
+                select_stmt.asc = False
+        if self.match(Token.Type.LIMIT):
+            if not self.match(Token.Type.NUMVAL):
+                self.error("expected valid int value after LIMIT keyword")
+            select_stmt.limit = self.str_into_type(self.previous.lexema, self.previous)
         return select_stmt
 
     # <create-table-stmt> ::= "CREATE" "TABLE" <table-name> "(" <column-def-list> ")"
@@ -916,7 +933,7 @@ class Interpreter:
             self.error("unknown statement type")
 
     def interpret_select_stmt(self, stmt : SelectStmt):
-        select_schema = SelectSchema(stmt.table_name, ConditionSchema(stmt.condition), stmt.all, stmt.column_list)
+        select_schema = SelectSchema(stmt.table_name, ConditionSchema(stmt.condition), stmt.all, stmt.column_list, stmt.order_by, stmt.asc, stmt.limit)
         return self.dbmanager.select(select_schema)
 
     def interpret_create_table_stmt(self, stmt : CreateTableStmt):
