@@ -309,6 +309,7 @@ class DBManager:
         #insertar los indexes
         for i, index in enumerate(indexes.keys()):
             if indexes[index] is not None:
+                print(indexes[index])
                 indexes[index].insert(pos, record.values[i])
 
     def delete(self, delete_schema : DeleteSchema) -> None:
