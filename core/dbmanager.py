@@ -150,10 +150,13 @@ class DBManager:
                 id += 1
         return records
 
-    def create_table(self, table_schema : TableSchema) -> None:
+    def create_table(self, table_schema : TableSchema, if_not_exists : bool = False) -> None:
         path = f"{self.tables_path}/{table_schema.table_name}"
         if os.path.exists(path):
-            self.error("table already exists")
+            if not if_not_exists:
+                self.error("table already exists")
+            else:
+                return
         else:
             os.makedirs(path)
 
@@ -187,12 +190,16 @@ class DBManager:
             
             self.logger.info("Table created successfully")
 
-    def drop_table(self, table_name : str) -> None:
+    def drop_table(self, table_name : str, if_exists : bool = False) -> None:
         path = f"{self.tables_path}/{table_name}"
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
-            self.error("table doesn't exist")
+            if not if_exists:
+                self.error("table doesn't exist")
+            else:
+                return
+            
 
     #------------------------ SELECT IMPLEMENTATION ----------------------------
 
