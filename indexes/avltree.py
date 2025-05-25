@@ -36,6 +36,8 @@ class AVLNode:
         val, pointer, left, right, height = struct.unpack(format, node)
         if column.data_type == DataType.VARCHAR:
             val = val.decode().strip("\x00")
+        if column.data_type == DataType.FLOAT:
+            val = round(float(val), 6)
         return AVLNode(column, val, pointer, left, right, height)
 
 
@@ -143,6 +145,7 @@ class AVLTree:
             return self._seek(key, punt.right)
         if key < punt.val:
             return self._seek(key, punt.left)
+        return None
 
     def _seek_ant(self, key:int, pos:int = -2, pred:int = -1):
         if pos == -2:

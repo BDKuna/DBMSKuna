@@ -37,6 +37,8 @@ class Record:
 		for i, col in enumerate(schema.columns):
 			if col.data_type == DataType.VARCHAR:
 				values[i] = values[i].decode().strip("\x00")
+			if col.data_type == DataType.FLOAT:
+				values[i] = round(float(values[i]), 6)
 		return cls(schema, values)
 
 	def __str__(self):
