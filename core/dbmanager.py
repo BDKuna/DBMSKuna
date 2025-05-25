@@ -288,6 +288,16 @@ class DBManager:
                                 self.error(f"value '{condition.right.value}' is not a valid knn definition")
                             index = self.get_index(table_schema, condition.left.column_name)
                             return self.list_to_bitmap(index.knnSearch(condition.right.value[0], condition.right.value[1], condition.right.value[2]))
+                        case BinaryOp.EQ:
+                            if utils.get_data_type(condition.right.value) != DataType.POINT:
+                                self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
+                            index = self.get_index(table_schema, condition.left.column_name)
+                            return self.list_to_bitmap(index.search(condition.right.value))
+                        case BinaryOp.NEQ:
+                            if utils.get_data_type(condition.right.value) != DataType.POINT:
+                                self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
+                            index = self.get_index(table_schema, condition.left.column_name)
+                            return self.bitmap_not(self.list_to_bitmap(index.search(condition.right.value)))
                         case _:
                             self.error("operation not supported for POINT type")
                 if column.data_type != utils.get_data_type(condition.right.value):
