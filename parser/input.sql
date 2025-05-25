@@ -51,4 +51,69 @@ CREATE TABLE test2 (
 );
 */
 
-SELECT * FROM test2 WHERE col1 = 'hola'
+/* 
+-- 1) Redefinimos test2 con una columna espacial "coord"
+    DROP TABLE IF EXISTS test2;
+
+CREATE TABLE test2 (
+  col1 VARCHAR(20) PRIMARY KEY INDEX HASH,
+  col2 INT INDEX AVL,
+  coord POINT guarda '(x,y)' INDEX RTREE
+);
+
+-- 2) Insertamos algunos puntos (x,y)
+INSERT INTO test2 VALUES
+  ('A', 10, (1.0, 2.0)),
+  ('B', 20, (3.5, 1.5)),
+  ('C', 30, (5.0, 5.0)),
+  ('D', 40, (2.2, 3.8)),
+  ('E', 50, (4.4, 0.9));
+
+-- 3) Crea el índice
+CREATE INDEX idx_test2_coord
+  ON test2 USING RTREE (coord);
+
+-- 4) Consulta por rango:  
+SELECT col1, col2, coord
+FROM test2
+WHERE coord WITHIN RECTANGLE (1.0, 1.0, 4.0, 4.0)
+OR
+coord WITHIN CIRCLE (1.0, 1.0, 4.0)
+
+-- 5) Consulta k-NN: 
+SELECT col1, col2, coord
+FROM test2
+WHERE coord KNN (3.0, 2.0, 3)
+
+DROP INDEX idx_test2_coord ON test2;
+*/
+
+DROP TABLE test5;
+
+CREATE TABLE test5 (
+  col1 VARCHAR(20) PRIMARY KEY INDEX HASH,
+  col2 INT INDEX AVL,
+  coord POINT INDEX RTREE
+);
+
+INSERT INTO test5 VALUES ('A', 10, (1.0, 2.0));
+
+INSERT INTO test5 VALUES ('B', 20, (3.5, 1.5));
+
+INSERT INTO test5 VALUES ('C', 30, (5.0, 5.0));
+
+INSERT INTO test5 VALUES ('D', 40, (2.2, 3.8));
+
+INSERT INTO test5 VALUES ('E', 50, (4.4, 0.9));
+
+/*
+SELECT col1, col2, coord
+FROM test5
+WHERE coord WITHIN RECTANGLE (4.0, 4.0, 6.0, 6.0)
+OR
+coord WITHIN CIRCLE (2.0, 2.0, 2.0);
+*/
+
+SELECT col1, col2, coord
+FROM test5
+WHERE coord KNN (3.0, 2.0, 1);

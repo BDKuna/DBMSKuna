@@ -9,6 +9,9 @@ class BinaryOp(Enum):
     GT = auto()
     LE = auto()
     GE = auto()
+    WC = auto()
+    WR = auto()
+    KNN = auto()
 
 class Condition:
     def __init__(self):

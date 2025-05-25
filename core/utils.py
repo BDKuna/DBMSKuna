@@ -15,6 +15,8 @@ def calculate_record_format(columns: list[Column]):
             fmt += f"{col.varchar_length}s"
         elif col.data_type == DataType.BOOL:
             fmt += "?"
+        elif col.data_type == DataType.POINT:
+            fmt += "ff"
         else:
             raise NotImplementedError(f"Unsupported type {col.data_type}")
     return fmt
@@ -28,6 +30,16 @@ def get_data_type(value) -> DataType:
         return DataType.BOOL
     elif isinstance(value, str):
         return DataType.VARCHAR
+    elif isinstance(value, tuple):
+        if len(value) == 4:
+            return "rectangle"
+        if len(value) == 3:
+            if isinstance(value[2], float):
+                return "circle"
+            if isinstance(value[2], int):
+                return "knn"
+        if len(value) == 2:
+            return DataType.POINT
 
 def get_empty_value(column: Column):
     if column.data_type == DataType.INT:
@@ -92,7 +104,7 @@ class IndexType(Enum):
     HASH = auto()
     BTREE = auto()
     RTREE = auto()
-    SEQ = auto()
+    BRIN = auto()
     NONE = auto()
 
 

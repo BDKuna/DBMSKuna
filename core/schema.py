@@ -5,13 +5,13 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 from core.conditionschema import ConditionSchema
 
-
 class DataType(Enum):
     INT = auto()
     FLOAT = auto()
     VARCHAR = auto()
     DATE = auto()
     BOOL = auto()
+    POINT = auto()
 
     def __str__(self):
         return self.name
@@ -22,7 +22,7 @@ class IndexType(Enum):
     HASH = auto()
     BTREE = auto()
     RTREE = auto()
-    SEQ = auto()
+    BRIN = auto()
     NONE = auto()
 
     def __str__(self):
@@ -78,9 +78,9 @@ class TableSchema:
             case IndexType.RTREE:
                 from indexes.Rtree import RTreeIndex
                 return RTreeIndex(self, column)
-            case IndexType.SEQ:
+            case IndexType.BRIN:
                 pass
-                # SEQ(table_schema, column)
+                # BRIN(table_schema, column)
             case IndexType.NONE:
                 return None
             case _:
