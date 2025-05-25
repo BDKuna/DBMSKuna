@@ -1,6 +1,9 @@
 # indices/EH.py
 
-import os
+import os, sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import struct
 import pickle
 from core.schema import TableSchema, Column, IndexType

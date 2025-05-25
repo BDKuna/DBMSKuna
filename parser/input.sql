@@ -105,7 +105,15 @@ INSERT INTO lugares VALUES
 INSERT INTO lugares VALUES
   (3, (12.120000, 77.030000), 'Barranco');
 
-  
+SELECT * FROM lugares
+WHERE ubicacion WITHIN RECTANGLE (12.0, 77.0, 13.0, 78.0);
+
+SELECT * FROM lugares
+WHERE ubicacion WITHIN CIRCLE (12.05, 77.03, 0.02);
+
+SELECT id, nombre FROM lugares
+WHERE ubicacion KNN (12.05, 77.04, 2);
+
 INSERT INTO test5 VALUES ('B', 20, (3.5, 1.5));
 
 INSERT INTO test5 VALUES ('C', 30, (5.0, 5.0));
