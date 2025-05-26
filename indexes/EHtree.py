@@ -1,6 +1,9 @@
 # indices/EH.py
 
-import os
+import os, sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import struct
 import pickle
 from core.schema import TableSchema, Column, IndexType
@@ -212,8 +215,8 @@ class ExtendibleHashTree:
     def __init__(self,
                  schema: TableSchema,
                  column: Column,
-                 bucket_capacity: int = 8,
-                 max_depth: int = 20):
+                 bucket_capacity: int = 4,
+                 max_depth: int = 100):
         if column.index_type != IndexType.HASH:
             raise Exception("Column index type mismatch for HASH")
         self.logger = logger.CustomLogger(f"EHTREE-{schema.table_name}-{column.name}")
@@ -255,7 +258,7 @@ class ExtendibleHashTree:
 
     def _hash_bits(self, key) -> str:
         if isinstance(key, str):
-            idx = int.from_bytes(hashlib.sha256(key.encode()).digest(), byteorder="big") % self.M
+            idx = int.from_bytes(hashlib.sha256(key.encode()).digest(), byteorder='little') % self.M
         else:
             idx = hash(key) % self.M
         return format(idx, f'0{self.max_depth}b')

@@ -15,6 +15,8 @@ def calculate_record_format(columns: list[Column]):
             fmt += f"{col.varchar_length}s"
         elif col.data_type == DataType.BOOL:
             fmt += "?"
+        elif col.data_type == DataType.POINT:
+            fmt += "ff"
         else:
             raise NotImplementedError(f"Unsupported type {col.data_type}")
     return fmt
@@ -28,6 +30,16 @@ def get_data_type(value) -> DataType:
         return DataType.BOOL
     elif isinstance(value, str):
         return DataType.VARCHAR
+    elif isinstance(value, tuple):
+        if len(value) == 4:
+            return "rectangle"
+        if len(value) == 3:
+            if isinstance(value[2], float):
+                return "circle"
+            if isinstance(value[2], int):
+                return "knn"
+        if len(value) == 2:
+            return DataType.POINT
 
 def get_empty_value(column: Column):
     if column.data_type == DataType.INT:
@@ -75,6 +87,8 @@ def calculate_column_format(column: Column)->str:
         return f"{column.varchar_length}s"
     elif column.data_type == DataType.BOOL:
         return "?"
+    elif column.data_type == DataType.POINT:
+            fmt += "ff"
     else:
         raise NotImplementedError(f"Unsupported type {column.data_type}")
 
@@ -90,6 +104,13 @@ def convert_value(value: str, col_type:DataType) -> any:
         return value.lower() in ('1', 'true', 'yes')
     elif col_type == DataType.VARCHAR:
         return value
+    elif col_type == DataType.POINT:
+        try:
+            value = value.strip("()")
+            x_str, y_str = value.split(",")
+            return (float(x_str), float(y_str))
+        except Exception as e:
+            raise ValueError(f"Valor de punto inválido: {value}") from e
     else:
         raise ValueError(f"Tipo de columna no soportado: {col_type}")
 
@@ -104,7 +125,7 @@ class IndexType(Enum):
     HASH = auto()
     BTREE = auto()
     RTREE = auto()
-    SEQ = auto()
+    BRIN = auto()
     NONE = auto()
 
 
