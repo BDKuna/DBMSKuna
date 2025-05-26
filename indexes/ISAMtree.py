@@ -1,6 +1,6 @@
 # indices/isam.py
 
-import os, struct, math
+import os, struct, math, re
 from core.schema import TableSchema, Column, IndexType
 from core import utils
 from core import stats
@@ -11,47 +11,42 @@ import logger
 # 0) Utils for strings
 # --------------------------------------------------------------------
 
-def str_to_int_unicode(s: str) -> int:
-    b = s.encode('utf-8')
-    n = 0
-    for byte in b:
-        n = n * 256 + byte
-    return n
+_SUFIJO = re.compile(r"(.*?)(\d+)$")
 
-def int_to_str_unicode(n: int) -> str:
-    if n == 0:
-        return ''
-    bytes_list = []
-    while n > 0:
-        n, rem = divmod(n, 256)
-        bytes_list.append(rem)
-    b = bytes(bytes_list[::-1])
-    return b.decode('utf-8', errors='replace')
+def compute_string_step(min_key: str, max_key: str, slots: int) -> float:
+    """
+    Calcula un salto (float) uniforme entre el sufijo numérico de min_key y max_key
+    para repartir 'slots' intervalos.
+    """
+    min_pref, min_num = _SUFIJO.match(min_key).groups()
+    _,       max_num = _SUFIJO.match(max_key).groups()
+    delta = int(max_num) - int(min_num)
+    return max(delta / slots, 1)
 
-def increment_string_id(s: str, step: int) -> str:
-    n = str_to_int_unicode(s)
-    n += step
-    return int_to_str_unicode(n)
+def increment_string_id(key: str, offset: float) -> str:
+    """
+    Dado 'str10' y offset=2.5 → produce 'str12' (redondeando hacia el entero más cercano).
+    """
+    m = _SUFIJO.match(key)
+    if not m:
+        raise ValueError(f"Clave no reconoce sufijo numérico: {key}")
+    prefijo, num = m.groups()
+    nuevo = int(round(int(num) + offset))
+    return f"{prefijo}{nuevo}"
 
-def decrement_id(base, step, is_string):
-    if is_string:
-        base_int = str_to_int_unicode(base)
-        new_int = base_int - step
-        if new_int < 0:
-            new_int = 0  # o maneja según convenga
-        return int_to_str_unicode(new_int)
-    else:
-        return base - step
-
-def compute_step(max_id, min_id, count, is_string):
-    if count <= 1:
-        return 1
-    if is_string:
-        max_int = str_to_int_unicode(max_id)
-        min_int = str_to_int_unicode(min_id)
-        return (max_int - min_int) // (count - 1)
-    else:
-        return (max_id - min_id) // (count - 1)
+def decrement_string_id(key: str, offset: float) -> str:
+    """
+    Dado un key tipo 'str10' y offset=2.5 → produce 'str8' (redondeando).
+    """
+    m = _SUFIJO.match(key)
+    if not m:
+        # si no tiene sufijo numérico, no sabemos decrementar
+        return key
+    prefijo, num = m.groups()
+    nuevo = int(round(int(num) - offset))
+    if nuevo < 0:
+        nuevo = 0
+    return f"{prefijo}{nuevo}"
 
 # --------------------------------------------------------------------
 # 1) Record + Page definitions
@@ -615,69 +610,54 @@ class ISAMFile:
         return last_boundary, None
 
     def _build_level1_phase2(self, ctx, last_boundary, partial_chunk=None):
-        """
-        Fase 2: rellena los punteros restantes con hojas “vacías”.
-        - ctx['pg'] ya debe estar en last_boundary+1
-        - partial_chunk: lista de IndexRecord incompleta de la fase 1, o None
-        Actualiza ctx['ptrs_created'], ctx['pg'], ctx['page_idx'].
-        """
         i, p, h = ctx['i'], ctx['p'], ctx['h']
-        empty_key = utils.get_empty_value(self.column)
+        # Cantidad de punteros totales = (i+1)**2 = p.
+        # Ya escribimos ctx['phase1_pages'] páginas completas.
+        slots = p - ctx['phase1_pages']
         step = ctx['step']
-        max_id = ctx['max_id'] or ('' if self.column.data_type == utils.DataType.VARCHAR else 0)
-        is_string = self.column.data_type == utils.DataType.VARCHAR
 
-        def increment_id(base_id, offset):
-            if is_string:
-                return increment_string_id(base_id, offset * step)
-            else:
-                return base_id + offset * step
+        # Empezamos en la clave máxima real
+        current_key = ctx['max_id']
 
-        # (B) si hay chunk parcial, rellenarlo
-        if partial_chunk and len(partial_chunk) > 0:
+        # (B) Rellenar chunk parcial, si existe
+        if partial_chunk:
             chunk = partial_chunk
-            base_id = increment_id(max_id, 1)
-            for j in range(len(chunk), ctx['i']):
-                if ctx['ptrs_created'] >= ctx['p'] or ctx['pg'] >= ctx['h']:
+            for _ in range(len(chunk), i):
+                if ctx['ptrs_created'] >= p or ctx['pg'] >= h:
                     break
                 left = ctx['pg']
                 ctx['pg'] += 1
                 ctx['ptrs_created'] += 1
-                right = ctx['pg'] if ctx['pg'] < ctx['h'] else -1
-                rec_id = increment_id(base_id, j - len(partial_chunk))
-                chunk.append(IndexRecord(self.column, rec_id, left, right))
+                right = ctx['pg'] if ctx['pg'] < h else -1
 
-            self.write_level1_page(IndexPage(ctx['page_idx'], chunk, ctx['i']))
+                # Generar siguiente clave:
+                current_key = increment_string_id(current_key, step)
+                chunk.append(IndexRecord(self.column, current_key, left, right))
+
+            self.write_level1_page(IndexPage(ctx['page_idx'], chunk, i))
             ctx['page_idx'] += 1
-            page2_idx = 1
-            max_id = chunk[-1].key
-        else:
-            page2_idx = 0
 
-        # (C) páginas completas restantes
-        while ctx['ptrs_created'] < ctx['p'] and ctx['pg'] < ctx['h'] and ctx['page_idx'] < (ctx['i'] + 1):
-            base_id = increment_id(max_id, page2_idx + 1)
+        # (C) Páginas completas restantes
+        while ctx['ptrs_created'] < p and ctx['pg'] < h and ctx['page_idx'] < (i + 1):
             chunk = []
-            for j in range(ctx['i']):
-                if ctx['ptrs_created'] >= ctx['p'] or ctx['pg'] >= ctx['h']:
+            current_key = increment_string_id(current_key, step)
+            for _ in range(i):
+                if ctx['ptrs_created'] >= p or ctx['pg'] >= h:
                     break
                 left = ctx['pg']
                 ctx['pg'] += 1
                 ctx['ptrs_created'] += 1
-                right = ctx['pg'] if ctx['pg'] < ctx['h'] else -1
-                rec_id = increment_id(base_id, j)
-                chunk.append(IndexRecord(self.column, rec_id, left, right))
+                right = ctx['pg'] if ctx['pg'] < h else -1
+                current_key = increment_string_id(current_key, step)
+                print(step)
+                print(current_key)
+                chunk.append(IndexRecord(self.column, current_key, left, right))
 
             if not chunk:
                 break
 
-            self.write_level1_page(IndexPage(ctx['page_idx'], chunk, ctx['i']))
+            self.write_level1_page(IndexPage(ctx['page_idx'], chunk, i))
             ctx['page_idx'] += 1
-            page2_idx += 1
-            last_right = chunk[-1].right
-            if last_right != -1:
-                ctx['pg'] = last_right + 1
-            max_id = chunk[-1].key
 
     def build_level1(self):
         """
@@ -732,7 +712,10 @@ class ISAMFile:
             ctx['phase1_pages'] = ctx['page_idx']
 
             # 6) calculo de step para IDs de hojas “vacías”
-            ctx['step'] = compute_step(ctx['max_id'], ctx['min_id'], ctx['seen_count'], self.column.data_type == utils.DataType.VARCHAR)
+            # Número total de punteros que faltan (fase 2 + parcial):
+            slots = (i + 1) ** 2 - ctx['phase1_pages']
+            # Y min/max vienen de ctx['min_id'], ctx['max_id'], que son cadenas.
+            ctx['step'] = compute_string_step(ctx['min_id'], ctx['max_id'], slots)
 
             # ––––– FASE 2 –––––
             # dejamos ctx['pg'] tal cual (la fase1 ya lo posicionó justo tras last_boundary)
@@ -752,9 +735,7 @@ class ISAMFile:
         # 1) recupero factores
         lf, ix = self.read_header()  # leaf_factor, index_factor
         i = ix
-        rec_id = None
-
-        is_string = self.column.data_type == utils.DataType.VARCHAR
+        is_string = (self.column.data_type == utils.DataType.VARCHAR)
         records: list[IndexRecord] = []
 
         for left in range(i):
@@ -765,7 +746,10 @@ class ISAMFile:
 
             if leaf is None or all(r.key == utils.get_empty_value(self.column) for r in leaf.records):
                 base = lvl1.records[0].key
-                rec_id = decrement_id(base, self.step, is_string)
+                if is_string:
+                    rec_id = decrement_string_id(base, self.step)
+                else:
+                    rec_id = base - self.step
             else:
                 rec_id = leaf.records[0].key
 
