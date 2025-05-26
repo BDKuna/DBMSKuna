@@ -44,6 +44,30 @@ def insert_csv_index_only_with_timer(table_schema: TableSchema, index_type: Inde
 
     return times, reads, writes
 
+def insert_csv_rtree_with_timer(table_schema: TableSchema, csv_path: str):
+    col = next(c for c in table_schema.columns if c.name == "location")
+    dbmanager = DBManager()
+
+    index = dbmanager.get_index(table_schema, col.name)
+
+    times = []
+
+    with open(csv_path, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            pos = int(row["pos"])
+            point_str = row["puntos"].strip()
+            point = utils.convert_value(point_str, col.data_type)
+
+            start = time.perf_counter()
+            index.insert(pos, point)
+            end = time.perf_counter()
+
+            times.append(end - start)
+
+    return times
+
+
 def test_index_insertions():
     dbmanager = DBManager()
 
@@ -112,4 +136,33 @@ def test_index_insertions():
     plt.show()
     
 
-test_index_insertions()
+def test_rtree_insertions():
+    dbmanager = DBManager()
+    table_name = "test-rtree"
+    csv_file = "basic-rtree.csv"
+
+    dbmanager.drop_table(table_name, True)
+
+    builder = TableSchemaBuilder()
+    builder.set_name(table_name)
+    builder.add_column(name="id", data_type=DataType.INT, is_primary_key=True)
+    builder.add_column(name="location", data_type=DataType.POINT, is_primary_key=False, index_type=IndexType.RTREE)
+
+    schema = builder.get()
+    dbmanager.create_table(schema)
+
+    times = insert_csv_rtree_with_timer(schema, csv_file)
+
+    print(f"R-TREE: inserted {len(times)} rows")
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(times, label="RTREE")
+    plt.xlabel("Insert number")
+    plt.ylabel("Time (seconds)")
+    plt.title("Insertion Time for RTree Index")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+test_rtree_insertions()
