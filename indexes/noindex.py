@@ -10,7 +10,6 @@ from core.record_file import RecordFile
 class NoIndex:
 	def __init__(self, schema:TableSchema, column:Column):
 		self.column = column
-		self.empty_key = utils.get_empty_value(self.column)
 		self.schema = schema
 		for pos, i in enumerate(schema.columns):
 			if i == column:

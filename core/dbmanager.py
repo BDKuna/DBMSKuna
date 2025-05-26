@@ -171,7 +171,14 @@ class DBManager:
             for column in table_schema.columns:
                 if column.is_primary:
                     if column.index_type == IndexType.NONE:
-                        column.index_type = IndexType.HASH
+                        if column.data_type == DataType.POINT:
+                            column.index_type = IndexType.RTREE
+                        else:    
+                            column.index_type = IndexType.HASH
+                if column.index_type == IndexType.RTREE and column.data_type != DataType.POINT:
+                    self.error(f"RTree index not supported for {column.data_type} data type")
+                if column.data_type == DataType.POINT and (column.index_type not in (IndexType.RTREE, IndexType.NONE)):
+                    self.error(f"{column.index_type} index not supported for POINT data type")
                 if column.data_type == DataType.VARCHAR:
                     if column.varchar_length == None:
                         self.error("Varchar length was not specified")
@@ -184,6 +191,7 @@ class DBManager:
             self.save_table_schema(table_schema, path)
 
             for column in table_schema.columns:
+                print(column.index_type)
                 self.get_index(table_schema, column.name)
             
             self.logger.info("Table created successfully")
@@ -415,7 +423,7 @@ class DBManager:
                 index = self.get_index(table, table.columns[pos].name)
                 index.delete(value)
 
-    def create_index(self, table_name : str, index_name : str, columns : list[str], index_type : IndexType = IndexType.BTREE):
+    def create_index(self, table_name : str, index_name : str, columns : list[str], index_type : IndexType = None):
         if len(columns) > 1:
             self.error(f"Index on more than one column not supported")
         column_name = columns[0]
@@ -429,6 +437,17 @@ class DBManager:
             self.error(f"column with name '{column_name}' doesn't exist")
         if column.index_type != IndexType.NONE:
             self.error(f"column already has an index")
+
+        if index_type == None:
+            if column.data_type == DataType.POINT:
+                index_type = IndexType.RTREE
+            else:
+                index_type = IndexType.BTREE
+        
+        if index_type == IndexType.RTREE and column.data_type != DataType.POINT:
+            self.error(f"RTree index not supported for {column.data_type} data type")
+        if column.data_type == DataType.POINT and index_type != IndexType.RTREE:
+            self.error(f"{index_type} index not supported for POINT data type")
 
         column.index_type = index_type
         column.index_name = index_name

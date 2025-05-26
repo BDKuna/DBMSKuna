@@ -72,7 +72,7 @@ class DropTableStmt(Stmt):
 
 # <create-index-stmt> ::= "CREATE" "INDEX" <index-name> "ON" <table-name> [ "USING" <index-type> ] "(" <column-list> ")"
 class CreateIndexStmt(Stmt):
-    def __init__(self, index_name : str = None, table_name : str = None, index_type : IndexType = IndexType.BTREE, column_list : list[str] = None):
+    def __init__(self, index_name : str = None, table_name : str = None, index_type : IndexType = None, column_list : list[str] = None):
         super().__init__()
         self.index_name = index_name
         self.table_name = table_name
