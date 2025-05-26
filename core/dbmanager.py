@@ -153,8 +153,6 @@ class DBManager:
             else:
                 return
         else:
-            os.makedirs(path)
-
             if not table_schema.columns:
                 self.error("the table must have at least 1 column")
 
@@ -175,11 +173,14 @@ class DBManager:
                     if column.index_type == IndexType.NONE:
                         column.index_type = IndexType.HASH
                 if column.data_type == DataType.VARCHAR:
-                    if column.varchar_length == -1:
+                    if column.varchar_length == None:
                         self.error("Varchar length was not specified")
+                    if column.varchar_length <= 0:
+                        self.error("Varchar length must be positive")
                 if column.index_type != IndexType.NONE and column.index_name == None:
                     column.index_name = f"idx_{column.name}_{column.index_type}"
-
+            
+            os.makedirs(path)
             self.save_table_schema(table_schema, path)
 
             for column in table_schema.columns:
@@ -210,6 +211,10 @@ class DBManager:
             if nonexistent:
                 self.error(f"some columns don't exist (nonexistent columns: {','.join(nonexistent)})")
         
+        if select_schema.limit != None:
+            if select_schema.limit <= 0:
+                self.error("limit must be positive")
+
         if select_schema.condition_schema.condition:
             bitmap = self.select_condition(table, select_schema.condition_schema.condition)
         else:
@@ -278,18 +283,24 @@ class DBManager:
                         case BinaryOp.WR:
                             if utils.get_data_type(condition.right.value) != "rectangle":
                                 self.error(f"value '{condition.right.value}' is not a valid rectangle definition")
+                            if condition.right.value[0] > condition.right.value[2] or condition.right.value[1] > condition.right.value [3]:
+                                self.error("min coordinates on rectangle definition must not be larger than max coordinates")
                             index = self.get_index(table_schema, condition.left.column_name)
                             mbr = MBR(condition.right.value[0], condition.right.value[1], condition.right.value[2], condition.right.value[3])
                             return self.list_to_bitmap(index.rangeSearch(mbr))
                         case BinaryOp.WC:
                             if utils.get_data_type(condition.right.value) != "circle":
                                 self.error(f"value '{condition.right.value}' is not a valid circle definition")
+                            if condition.right.value[2] < 0:
+                                self.error("radius on circle definition must be positive")
                             index = self.get_index(table_schema, condition.left.column_name)
                             circle = Circle(condition.right.value[0], condition.right.value[1], condition.right.value[2])
                             return self.list_to_bitmap(index.rangeSearch(circle))
                         case BinaryOp.KNN:
                             if utils.get_data_type(condition.right.value) != "knn":
                                 self.error(f"value '{condition.right.value}' is not a valid knn definition")
+                            if condition.right.value[2] <= 0:
+                                self.error("k value on knn must be positive")
                             index = self.get_index(table_schema, condition.left.column_name)
                             return self.list_to_bitmap(index.knnSearch(condition.right.value[0], condition.right.value[1], condition.right.value[2]))
                         case BinaryOp.EQ:
@@ -381,6 +392,9 @@ class DBManager:
         for i, value in enumerate(reordered_values):
             if tableSchema.columns[i].data_type != utils.get_data_type(value):
                 self.error(f"value '{value}' is not of data type {tableSchema.columns[i].data_type}")
+            if tableSchema.columns[i].data_type == DataType.VARCHAR:
+                if len(value) > tableSchema.columns[i].varchar_length:
+                    self.error(f"varchar value '{value}' exceeds column's varchar length")
 
         record = Record(tableSchema, reordered_values)
         record_file = RecordFile(tableSchema)
