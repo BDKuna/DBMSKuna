@@ -29,7 +29,7 @@ class IndexType(Enum):
         return self.name
 
 class Column:
-    def __init__(self, name, data_type : DataType, is_primary = False, index_type = IndexType.NONE, varchar_length = -1, index_name = None):
+    def __init__(self, name, data_type : DataType, is_primary = False, index_type = IndexType.NONE, varchar_length = None, index_name = None):
         self.name = name
         self.data_type = data_type
         self.is_primary = is_primary

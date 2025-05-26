@@ -455,10 +455,11 @@ class Parser:
         if not self.match(Token.Type.ID):
             self.error("expected index name after DROP INDEX keyword")
         drop_index_stmt.index_name = self.previous.lexema
-        if self.match(Token.Type.ON):
-            if not self.match(Token.Type.ID):
-                self.error("expected table name after ON keyword")
-            drop_index_stmt.table_name = self.previous.lexema
+        if not self.match(Token.Type.ON):
+            self.error("expected ON keyword after index name")
+        if not self.match(Token.Type.ID):
+            self.error("expected table name after ON keyword")
+        drop_index_stmt.table_name = self.previous.lexema
         return drop_index_stmt
     
     # <or-condition> ::= <and-condition> { "OR" <and-condition> }
