@@ -42,7 +42,6 @@ def get_data_type(value) -> DataType:
             return DataType.POINT
 
 def get_empty_value(column: Column):
-    print("hola2")
     if column.data_type == DataType.INT:
         return -1
     elif column.data_type == DataType.FLOAT:
@@ -55,7 +54,6 @@ def get_empty_value(column: Column):
         raise NotImplementedError(f"Unsupported type {column.data_type}")
 
 def get_min_value(column: Column):
-    print("hola")
     if column.data_type == DataType.INT:
         return -10**18
     elif column.data_type == DataType.FLOAT:
@@ -68,7 +66,6 @@ def get_min_value(column: Column):
         raise NotImplementedError(f"Unsupported type {column.data_type}")
 
 def get_max_value(column: Column):
-    print("hola3")
     if column.data_type == DataType.INT:
         return 10**18
     elif column.data_type == DataType.FLOAT:
