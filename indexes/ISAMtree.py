@@ -71,7 +71,11 @@ class LeafRecord:
         FMT = utils.calculate_column_format(column) + "i"
         val, datapos = struct.unpack(FMT, data)
         if column.data_type == utils.DataType.VARCHAR:
-            val = val.decode().rstrip("\x00")
+            try:
+                val = val.decode().rstrip("\x00")
+            except UnicodeDecodeError:
+                val = val.decode('utf-8', errors='replace').rstrip("\x00")
+                print(val)
         return LeafRecord(column, val, datapos)
 
 class IndexRecord:
@@ -160,8 +164,8 @@ class ISAMFile:
     def __init__(self,
                  schema: TableSchema,
                  column: Column,
-                 leaf_factor: int  = 4,
-                 index_factor: int = 4):
+                 leaf_factor: int,
+                 index_factor: int):
         if column.index_type != IndexType.ISAM:
             raise Exception("column index type no coincide con ISAM")
         self.schema       = schema
@@ -175,12 +179,19 @@ class ISAMFile:
         self.step = None
 
         # asegurarnos de que existe y escribir cabecera
+        # asegurarnos de que existe
         if not os.path.exists(self.filename):
             open(self.filename, "wb").close()
-        with open(self.filename, "r+b") as f:
-            f.seek(0)
-            f.write(self.HEADER_STRUCT.pack(leaf_factor, index_factor))
-            stats.count_write()
+            # -- archivo nuevo: escribir cabecera con los factores iniciales
+            with open(self.filename, "r+b") as f:
+                f.seek(0)
+                f.write(self.HEADER_STRUCT.pack(leaf_factor, index_factor))
+                stats.count_write()
+        else:
+            # -- archivo existente: leer la cabecera y asignar leaf_factor/index_factor
+            lf, ix = self.read_header()
+            self.leaf_factor = lf
+            self.index_factor = ix
 
     def read_header(self):
         with open(self.filename, "rb") as f:
@@ -770,16 +781,25 @@ class ISAMIndex:
     def __init__(self,
                  schema: TableSchema,
                  column: Column,
-                 leaf_factor: int  = 4,
-                 index_factor: int = 4):
-        self.schema       = schema
-        self.column       = column
-        self.rf           = RecordFile(schema)
-        self.file         = ISAMFile(schema, column, leaf_factor, index_factor)
-        self.logger       = logger.CustomLogger(f"ISAMINDEX-{schema.table_name}-{column.name}")
-        self.num_level1   = 0
-        self.num_leaves   = 0
-        self.step         = None
+                 leaf_factor: int | None  = None,
+                 index_factor: int | None = None):
+        self.schema = schema
+        self.column = column
+        self.rf = RecordFile(schema)
+
+        # 1) Initialize the ISAMFile.
+        #    If leaf_factor/index_factor were passed (first creation),
+        #    use them; otherwise use placeholders (won't matter if file exists).
+        lf_arg = leaf_factor or 0
+        ix_arg = index_factor or 0
+        self.file = ISAMFile(schema, column, lf_arg, ix_arg)
+        lf, ix = self.file.read_header()
+        self.file.leaf_factor = lf
+        self.file.index_factor = ix
+        self.logger = logger.CustomLogger(f"ISAMINDEX-{schema.table_name}-{column.name}")
+        self.num_level1 = 0
+        self.num_leaves = 0
+        self.step = None
 
     def _calculate_factors(self, fill_factor: float = 0.5):
         """
@@ -878,7 +898,8 @@ class ISAMIndex:
                 if rec.key > end:
                     return results
                 results.append(rec.datapos)
-            if lp.next_page == -1:
+            if lp.next_page < 1:
+                print(self)
                 break
             lp = self.file.read_leaf_page(lp.next_page)
 
