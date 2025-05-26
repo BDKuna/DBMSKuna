@@ -12,7 +12,7 @@ from indexes.bplustree import BPlusTree
 from indexes.avltree import AVLTree
 from indexes.EHtree import ExtendibleHashTree
 from indexes.Rtree import RTreeIndex
-from indexes.ISAMtree import ISAMIndex
+from indexes.ISAMtree import ISAMIndex, test_isam_integrity
 from indexes.noindex import NoIndex
 
 import csv
@@ -54,7 +54,6 @@ class DBManager:
                         index = AVLTree(table_schema, column)
                     case IndexType.ISAM:
                         index = ISAMIndex(table_schema, column)
-                        index.build_index()
                     case IndexType.HASH:
                         index = ExtendibleHashTree(table_schema, column)
                     case IndexType.BTREE:
@@ -351,13 +350,17 @@ class DBManager:
         indexes = table_schema.get_indexes()
         column_index = table_schema.columns.index(column)  # posición de la columna en el esquema
         index_structure = indexes[column.name]  # estructura del índice recién creado
-
-        while pos < max_pos:
-            record = record_file.read(pos)
-            if record is not None:  # Evita registros borrados si usas lista libre
-                value = record.values[column_index]
-                index_structure.insert(pos, value)
-            pos += 1
+        print(index_type)
+        if index_type == IndexType.ISAM:
+            index_structure.build_index()
+            test_isam_integrity(index_structure)
+        else:
+            while pos < max_pos:
+                record = record_file.read(pos)
+                if record is not None:  # Evita registros borrados si usas lista libre
+                    value = record.values[column_index]
+                    index_structure.insert(pos, value)
+                pos += 1
             
     def drop_index(self, table_name : str, index_name : str) -> None:
         table_schema = self.get_table_schema(table_name)
