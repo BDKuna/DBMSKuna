@@ -43,6 +43,16 @@ def decrement_id(base, step, is_string):
     else:
         return base - step
 
+def compute_step(max_id, min_id, count, is_string):
+    if count <= 1:
+        return 1
+    if is_string:
+        max_int = str_to_int_unicode(max_id)
+        min_int = str_to_int_unicode(min_id)
+        return (max_int - min_int) // (count - 1)
+    else:
+        return (max_id - min_id) // (count - 1)
+
 # --------------------------------------------------------------------
 # 1) Record + Page definitions
 # --------------------------------------------------------------------
@@ -88,7 +98,10 @@ class IndexRecord:
         FMT = utils.calculate_column_format(column) + "ii"
         key, left, right = struct.unpack(FMT, data)
         if column.data_type == utils.DataType.VARCHAR:
-            key = key.decode().rstrip("\x00")
+            try:
+                key = key.decode().rstrip("\x00")
+            except UnicodeDecodeError:
+                key = key.decode('utf-8', errors='replace').rstrip("\x00")
         return IndexRecord(column, key, left, right)
 
 class LeafPage:
@@ -333,38 +346,26 @@ class ISAMFile:
             stats.count_write()
 
     def copy_to_leaf_records(self, rf: RecordFile):
-        """
-        Lee todos los registros de rf, los ordena por clave primaria,
-        y genera EXACTAMENTE p = (i+1)^2 páginas hoja (not_overflow=1),
-        con overflow si hace falta, encadenándolas adecuadamente.
-        """
-
-        # 2) parámetros
         l = self.leaf_factor
         i = self.index_factor
         p = (i + 1) ** 2  # número de páginas regulares
         empty_key = utils.get_empty_value(self.column)
 
-        # 3) cálculos de offsets y tamaños
         lf, ix = self.read_header()
-        root_sz = self._size_root()
-        lvl1_sz = root_sz  # mismo formato que root
         leaf_sz = self._size_leaf()
         leaves_off = self._offset_leaves()
 
-        leaf_idx = 0  # contador global de hojas escritas
-        reg_pages = 0  # cuántas regulares ya
-        overflow = []
-        # 0) si no hay registros en rf
-        if rf.max_id() == 0:
+        leaf_idx = 0
+        reg_pages = 0
+        max_pos = rf.max_id()
+
+        if max_pos == 0:
             with open(self.filename, "r+b") as f:
-                # asegurarnos de reservar hasta la primera hoja
                 f.seek(0, os.SEEK_END)
                 if f.tell() < leaves_off:
                     f.write(b'\x00' * (leaves_off - f.tell()))
                     stats.count_write()
                 f.seek(leaves_off)
-                # rellenar con hojas vacías hasta p
                 while reg_pages < p:
                     chunk = [LeafRecord(self.column, empty_key, -1) for _ in range(l)]
                     self.write_leaf_page(LeafPage(leaf_idx, -1, 1, chunk, l))
@@ -372,66 +373,62 @@ class ISAMFile:
                     reg_pages += 1
             self._link_leaf_pages(leaves_off, leaf_sz, leaf_idx)
             return
-        # 1) cargar y ordena
+
         leafrecs = []
-        pos = 0
-        while True:
+        for pos in range(max_pos):
             rec = rf.read(pos)
             if rec is None:
-                break
+                continue
             key = getattr(rec, "id", rec.values[0])
             leafrecs.append((key, pos))
-            pos += 1
         leafrecs.sort(key=lambda x: x[0])
 
         with open(self.filename, "r+b") as f:
-            # asegurarnos de reservar hasta la primera hoja
             f.seek(0, os.SEEK_END)
             if f.tell() < leaves_off:
                 f.write(b'\x00' * (leaves_off - f.tell()))
                 stats.count_write()
             f.seek(leaves_off)
 
-            # 4a) caso: caben en p hojas regulares
             if len(leafrecs) <= p * l:
                 idx = 0
                 while reg_pages < p and idx < len(leafrecs):
                     remain = len(leafrecs) - idx
-                    slots  = p - reg_pages
-                    take   = math.ceil(remain / slots)
+                    slots = p - reg_pages
+                    to_take = math.ceil(remain / slots)
 
-                    window = leafrecs[idx: idx + take]
-                    idx   += take
+                    # Agrupar duplicados
+                    end = idx + to_take
+                    while end < len(leafrecs) and leafrecs[end][0] == leafrecs[end - 1][0]:
+                        end += 1
+                    window = leafrecs[idx:end]
+
+                    idx = end
                     reg_pages += 1
 
-                    # trocear regular vs overflow
-                    hoja     = window[:l]
+                    hoja = window[:l]
                     overflow = window[l:]
 
-                    # escribir la página regular (not_overflow=1)
                     chunk = [LeafRecord(self.column, k, dp) for k, dp in hoja]
                     while len(chunk) < l:
                         chunk.append(LeafRecord(self.column, empty_key, -1))
                     self.write_leaf_page(LeafPage(leaf_idx, -1, 1, chunk, l))
                     leaf_idx += 1
 
-                    # escribir overflows (not_overflow=0)
                     for j in range(0, len(overflow), l):
-                        seg = overflow[j:j+l]
+                        seg = overflow[j:j + l]
                         chunk = [LeafRecord(self.column, k, dp) for k, dp in seg]
                         while len(chunk) < l:
                             chunk.append(LeafRecord(self.column, empty_key, -1))
                         self.write_leaf_page(LeafPage(leaf_idx, -1, 0, chunk, l))
                         leaf_idx += 1
 
-                # rellenar con hojas vacías hasta p
                 while reg_pages < p:
                     chunk = [LeafRecord(self.column, empty_key, -1) for _ in range(l)]
                     self.write_leaf_page(LeafPage(leaf_idx, -1, 1, chunk, l))
                     leaf_idx += 1
                     reg_pages += 1
 
-            # 4b) caso: más de p*l registros → todas overflow=0
             else:
                 chunk = []
                 for k, dp in leafrecs:
@@ -446,7 +443,6 @@ class ISAMFile:
                     self.write_leaf_page(LeafPage(leaf_idx, -1, 0, chunk, l))
                     leaf_idx += 1
 
-        # 5) encadenar todas las hojas (next_page) secuencialmente
         self._link_leaf_pages(leaves_off, leaf_sz, leaf_idx)
 
     def _link_leaf_pages(self, leaf_off: int, leaf_sz: int, count: int):
@@ -539,7 +535,7 @@ class ISAMFile:
                 cand = ctx['pg'] if ctx['pg'] < h else -1
                 while cand != -1:
                     nl = self.read_leaf_page(cand)
-                    if nl and nl.records and nl.records[0].key == ctx['last_valid']:
+                    if nl.records[0].key == ctx['last_valid']:
                         cand = nl.next_page
                     else:
                         break
@@ -706,12 +702,7 @@ class ISAMFile:
             ctx['phase1_pages'] = ctx['page_idx']
 
             # 6) calculo de step para IDs de hojas “vacías”
-            if ctx['seen_count'] > 1:
-                ctx['step'] = (
-                                      ctx['max_id'] - ctx['min_id']
-                              ) // (ctx['seen_count'] - 1)
-            else:
-                ctx['step'] = 1
+            ctx['step'] = compute_step(ctx['max_id'], ctx['min_id'], ctx['seen_count'], self.column.data_type == utils.DataType.VARCHAR)
 
             # ––––– FASE 2 –––––
             # dejamos ctx['pg'] tal cual (la fase1 ya lo posicionó justo tras last_boundary)
@@ -738,7 +729,6 @@ class ISAMFile:
 
         for left in range(i):
             right = left + 1
-
             lvl1 = self.read_level1_page(right)
             first_leaf_pg = lvl1.records[0].left
             leaf = self.read_leaf_page(first_leaf_pg)
