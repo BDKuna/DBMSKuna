@@ -395,8 +395,6 @@ class DBManager:
         else:
             reordered_values = values
 
-        # print(reordered_values)
-
         for i, value in enumerate(reordered_values):
             if tableSchema.columns[i].data_type != utils.get_data_type(value):
                 self.error(f"value '{value}' is not of data type {tableSchema.columns[i].data_type}")

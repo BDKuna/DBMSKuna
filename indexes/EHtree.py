@@ -215,7 +215,7 @@ class ExtendibleHashTree:
     def __init__(self,
                  schema: TableSchema,
                  column: Column,
-                 bucket_capacity: int = 10,
+                 bucket_capacity: int = 4,
                  max_depth: int = 100):
         if column.index_type != IndexType.HASH:
             raise Exception("Column index type mismatch for HASH")
