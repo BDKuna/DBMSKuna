@@ -781,7 +781,52 @@ class ISAMIndex:
         self.num_leaves   = 0
         self.step         = None
 
+    def _calculate_factors(self, fill_factor: float = 0.5):
+        """
+        Ajusta self.file.leaf_factor e self.file.index_factor para que
+        las hojas queden llenas en fill_factor (%) y el nivel-1 abarque todas.
+        """
+        # 1) Total de registros en RF
+        N = count_records_in_rf(self.rf)
+
+        # 2) Tamaños en bytes
+        leaf_header = LeafPage.HSIZE  # cabecera hoja :contentReference[oaicite:0]{index=0}
+        index_header = IndexPage.HSIZE  # cabecera nivel-1 :contentReference[oaicite:1]{index=1}
+        rec_sz = LeafRecord(self.column, 0, 0).STRUCT.size  # tamaño de un LeafRecord
+        idx_sz = IndexRecord(self.column, 0, 0, 0).STRUCT.size
+
+        # 3) Capacidad máxima por página
+        page_size = 4096
+        l_max = (page_size - leaf_header) // rec_sz
+        i_max = (page_size - index_header) // idx_sz
+
+        # 4) Arrancamos con el máximo y estimamos hojas
+        f = fill_factor
+        l = l_max
+        leaf_pages_est = math.ceil(N / (l * f))
+
+        # 5) Calculamos index_factor mínimo que apunte a todas las hojas
+        i = min(i_max, math.ceil(math.sqrt(leaf_pages_est)) - 1)
+        p = (i + 1) ** 2
+
+        # 6) Reajustamos leaf_factor según p
+        l = min(l_max, math.ceil(N / (p * f)))
+
+        # 7) Clampeamos para evitar valores extremos
+        l = max(2, l)
+        i = max(2, i)
+
+        # 8) Asignamos los nuevos factores y reescribimos cabecera en disco
+        self.file.leaf_factor = l
+        self.file.index_factor = i
+        with open(self.file.filename, "r+b") as fh:
+            fh.seek(0)
+            fh.write(self.file.HEADER_STRUCT.pack(l, i))
+
     def build_index(self):
+        # 0) calcular leaf e index factor al 50% de ocupación
+        self._calculate_factors(fill_factor=0.5)
+
         # 1) copiar todos los records a las hojas
         self.file.copy_to_leaf_records(self.rf)
 
