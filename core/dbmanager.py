@@ -177,6 +177,8 @@ class DBManager:
                 if column.data_type == DataType.VARCHAR:
                     if column.varchar_length == -1:
                         self.error("Varchar length was not specified")
+                if column.index_type != IndexType.NONE and column.index_name == None:
+                    column.index_name = f"idx_{column.name}_{column.index_type}"
 
             self.save_table_schema(table_schema, path)
 
@@ -443,9 +445,12 @@ class DBManager:
             if column.index_name == index_name:
                 index = self.get_index(table_schema, column.name)
                 if column.index_type == IndexType.NONE:
-                    self.error("Cannot drop column with not index")
+                    self.error("Cannot drop index of type NoIndex")
+                if column.is_primary:
+                    self.error("Cannot drop the primary key's index")
                 index.clear()
                 column.index_type = IndexType.NONE
+                column.index_name = None
                 path = f"{self.tables_path}/{table_schema.table_name}"
                 self.save_table_schema(table_schema, path)
                 return
