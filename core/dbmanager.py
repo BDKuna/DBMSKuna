@@ -22,10 +22,23 @@ from core.record_file import Record, RecordFile
 import logger
 
 class DBManager:
+    _instance = None  # Clase-level singleton reference
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            # Crea una nueva instancia y guárdala en la clase
+            cls._instance = super(DBManager, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
+        # Solo inicializa la primera vez
+        if self._initialized:
+            return
         self.tables_path = f"{os.path.dirname(__file__)}/../tables"
         self.logger = logger.CustomLogger("DBManager")
         self.indexes = {}
+        self._initialized = True
 
     def error(self, error : str):
         raise RuntimeError(error)

@@ -44,9 +44,9 @@ def insert_csv_index_only_with_timer(table_schema: TableSchema, index_type: Inde
 
     return times, reads, writes
 
-def insert_csv_rtree_with_timer(dbmanager: DBManager, table_schema: TableSchema, csv_path: str):
+def insert_csv_rtree_with_timer(table_schema: TableSchema, csv_path: str):
     col = next(c for c in table_schema.columns if c.name == "location")
-
+    dbmanager = DBManager()
     index = dbmanager.get_index(table_schema, col.name)
 
     times = []
@@ -150,7 +150,7 @@ def test_rtree_insertions():
     schema = builder.get()
     dbmanager.create_table(schema)
 
-    times = insert_csv_rtree_with_timer(dbmanager, schema, csv_file)
+    times = insert_csv_rtree_with_timer(schema, csv_file)
 
     print(f"R-TREE: inserted {len(times)} rows")
 
