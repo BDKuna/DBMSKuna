@@ -100,8 +100,8 @@ def test_index_insertions():
         }
 
         print(f"{index_type.name}: inserted {len(times)} rows")
-
-    # Graficar tiempo de inserción
+    
+    # Gráficas generales
     plt.figure(figsize=(10, 6))
     for name, data in all_results.items():
         plt.plot(data["times"], label=f"{name}")
@@ -110,9 +110,9 @@ def test_index_insertions():
     plt.title("Insertion Time per Index Type")
     plt.legend()
     plt.grid(True)
+    plt.tight_layout()
     plt.show()
 
-    # Graficar lecturas
     plt.figure(figsize=(10, 6))
     for name, data in all_results.items():
         plt.plot(data["reads"], label=f"{name}")
@@ -121,9 +121,9 @@ def test_index_insertions():
     plt.title("Memory Reads per Insertion")
     plt.legend()
     plt.grid(True)
+    plt.tight_layout()
     plt.show()
 
-    # Graficar escrituras
     plt.figure(figsize=(10, 6))
     for name, data in all_results.items():
         plt.plot(data["writes"], label=f"{name}")
@@ -132,7 +132,33 @@ def test_index_insertions():
     plt.title("Memory Writes per Insertion")
     plt.legend()
     plt.grid(True)
+    plt.tight_layout()
     plt.show()
+
+    # Gráficas individuales por índice
+    for name, data in all_results.items():
+        fig, axs = plt.subplots(3, 1, figsize=(10, 12))
+        fig.suptitle(f"Performance Metrics for {name} Index", fontsize=14)
+
+        axs[0].plot(data["times"], color='blue')
+        axs[0].set_ylabel("Time (s)")
+        axs[0].set_title("Insertion Time")
+        axs[0].grid(True)
+
+        axs[1].plot(data["reads"], color='green')
+        axs[1].set_ylabel("Reads")
+        axs[1].set_title("Memory Reads")
+        axs[1].grid(True)
+
+        axs[2].plot(data["writes"], color='red')
+        axs[2].set_ylabel("Writes")
+        axs[2].set_title("Memory Writes")
+        axs[2].set_xlabel("Insert number")
+        axs[2].grid(True)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])  # ajusta para dejar espacio al título
+        plt.show()
+
     
 
 def test_rtree_insertions():

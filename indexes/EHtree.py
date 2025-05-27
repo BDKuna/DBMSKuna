@@ -216,7 +216,7 @@ class ExtendibleHashTree:
                  schema: TableSchema,
                  column: Column,
                  bucket_capacity: int = 4,
-                 max_depth: int = 100):
+                 max_depth: int = 20):
         if column.index_type != IndexType.HASH:
             raise Exception("Column index type mismatch for HASH")
         self.logger = logger.CustomLogger(f"EHTREE-{schema.table_name}-{column.name}")
