@@ -10,7 +10,7 @@
               | <create-index-stmt>
               | <drop-index-stmt>
 
-<select-stmt> ::= "SELECT" <select-list> "FROM" <table-name> [ "WHERE" <condition> ]
+<select-stmt> ::= "SELECT" <select-list> "FROM" <table-name> [ "WHERE" <condition> ] ["ORDER" "BY" <column-name> ["ASC" | "DESC"]] ["LIMIT" <number>]
 
 <create-table-stmt> ::= "CREATE" "TABLE" <table-name> "(" <column-def-list> ")"
 
@@ -46,7 +46,11 @@
 
 <predicate> ::= <simple-condition> | "(" <condition> ")"
 
-<simple-condition> ::= <column-name> <operator> <value> | <column-name> "BETWEEN" <value> "AND" <value>
+<simple-condition> ::= <column-name> <operator> <value> |
+                       <column-name> "BETWEEN" <value> "AND" <value> |
+                       <column-name> "WITHIN" "RECTANGLE" "(" <float> "," <float> "," <float> "," <float> )" |
+                       <column-name> "WITHIN" "CIRCLE" "(" <float> "," <float> "," <float> ) |
+                       <column-name> "KNN" "(" <float> "," <float> "," <number> )
 
 <operator> ::= "=" | "<>" | "<" | ">" | "<=" | ">="
 
