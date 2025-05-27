@@ -622,15 +622,11 @@ class ISAMFile:
 
     def _build_level1_phase2(self, ctx, last_boundary, partial_chunk=None):
         i, p, h = ctx['i'], ctx['p'], ctx['h']
-        # Cantidad de punteros totales = (i+1)**2 = p.
-        # Ya escribimos ctx['phase1_pages'] páginas completas.
-        slots = p - ctx['phase1_pages']
         step = ctx['step']
-
-        # Empezamos en la clave máxima real
+        is_string = ctx.get('is_string', False)
         current_key = ctx['max_id']
 
-        # (B) Rellenar chunk parcial, si existe
+        # Rellenar chunk parcial si existe
         if partial_chunk:
             chunk = partial_chunk
             for _ in range(len(chunk), i):
@@ -641,17 +637,24 @@ class ISAMFile:
                 ctx['ptrs_created'] += 1
                 right = ctx['pg'] if ctx['pg'] < h else -1
 
-                # Generar siguiente clave:
-                current_key = increment_string_id(current_key, step)
+                if is_string:
+                    current_key = increment_string_id(current_key, step)
+                else:
+                    current_key = current_key + step
+
                 chunk.append(IndexRecord(self.column, current_key, left, right))
 
             self.write_level1_page(IndexPage(ctx['page_idx'], chunk, i))
             ctx['page_idx'] += 1
 
-        # (C) Páginas completas restantes
+        # Páginas completas restantes
         while ctx['ptrs_created'] < p and ctx['pg'] < h and ctx['page_idx'] < (i + 1):
             chunk = []
-            current_key = increment_string_id(current_key, step)
+            if is_string:
+                current_key = increment_string_id(current_key, step)
+            else:
+                current_key = current_key + step
+
             for _ in range(i):
                 if ctx['ptrs_created'] >= p or ctx['pg'] >= h:
                     break
@@ -659,9 +662,12 @@ class ISAMFile:
                 ctx['pg'] += 1
                 ctx['ptrs_created'] += 1
                 right = ctx['pg'] if ctx['pg'] < h else -1
-                current_key = increment_string_id(current_key, step)
-                print(step)
-                print(current_key)
+
+                if is_string:
+                    current_key = increment_string_id(current_key, step)
+                else:
+                    current_key = current_key + step
+
                 chunk.append(IndexRecord(self.column, current_key, left, right))
 
             if not chunk:
@@ -709,6 +715,7 @@ class ISAMFile:
             'seen_count': 0,
             'last_valid': None,
             'step': 0,
+            'is_string': self.column.data_type == utils.DataType.VARCHAR  # <-- agrega esto
         }
 
         # 5) abrir el archivo y situarnos en nivel1
@@ -724,9 +731,13 @@ class ISAMFile:
 
             # 6) calculo de step para IDs de hojas “vacías”
             # Número total de punteros que faltan (fase 2 + parcial):
-            slots = (i + 1) ** 2 - ctx['phase1_pages']
-            # Y min/max vienen de ctx['min_id'], ctx['max_id'], que son cadenas.
-            ctx['step'] = compute_string_step(ctx['min_id'], ctx['max_id'], slots)
+            if ctx['is_string']:
+                ctx['step'] = compute_string_step(ctx['min_id'], ctx['max_id'], (i + 1) ** 2 - ctx['phase1_pages'])
+            else:
+                if ctx['seen_count'] > 1:
+                    ctx['step'] = (ctx['max_id'] - ctx['min_id']) // (ctx['seen_count'] - 1)
+                else:
+                    ctx['step'] = 1
 
             # ––––– FASE 2 –––––
             # dejamos ctx['pg'] tal cual (la fase1 ya lo posicionó justo tras last_boundary)
@@ -802,43 +813,44 @@ class ISAMIndex:
         self.step = None
 
     def _calculate_factors(self, fill_factor: float = 0.5):
-        """
-        Ajusta self.file.leaf_factor e self.file.index_factor para que
-        las hojas queden llenas en fill_factor (%) y el nivel-1 abarque todas.
-        """
-        # 1) Total de registros en RF
         N = count_records_in_rf(self.rf)
-
-        # 2) Tamaños en bytes
-        leaf_header = LeafPage.HSIZE  # cabecera hoja :contentReference[oaicite:0]{index=0}
-        index_header = IndexPage.HSIZE  # cabecera nivel-1 :contentReference[oaicite:1]{index=1}
-        rec_sz = LeafRecord(self.column, 0, 0).STRUCT.size  # tamaño de un LeafRecord
+        leaf_header = LeafPage.HSIZE
+        index_header = IndexPage.HSIZE
+        rec_sz = LeafRecord(self.column, 0, 0).STRUCT.size
         idx_sz = IndexRecord(self.column, 0, 0, 0).STRUCT.size
-
-        # 3) Capacidad máxima por página
         page_size = 4096
+
         l_max = (page_size - leaf_header) // rec_sz
         i_max = (page_size - index_header) // idx_sz
 
-        # 4) Arrancamos con el máximo y estimamos hojas
         f = fill_factor
+
+        # Inicializamos leaf_factor al máximo
         l = l_max
-        leaf_pages_est = math.ceil(N / (l * f))
 
-        # 5) Calculamos index_factor mínimo que apunte a todas las hojas
-        i = min(i_max, math.ceil(math.sqrt(leaf_pages_est)) - 1)
-        p = (i + 1) ** 2
+        # Iteramos para encontrar i y l coherentes
+        for _ in range(10):  # máximo 10 iteraciones para convergencia
+            # Cantidad estimada de páginas hoja para llenar al fill_factor
+            leaf_pages_est = math.ceil(N / (l * f))
 
-        # 6) Reajustamos leaf_factor según p
-        l = min(l_max, math.ceil(N / (p * f)))
+            # Calculamos mínimo index_factor para apuntar a todas hojas
+            i = min(i_max, max(2, math.ceil(math.sqrt(leaf_pages_est)) - 1))
 
-        # 7) Clampeamos para evitar valores extremos
-        l = max(2, l)
-        i = max(2, i)
+            # Total páginas de nivel 1
+            p = (i + 1) ** 2
 
-        # 8) Asignamos los nuevos factores y reescribimos cabecera en disco
+            # Recalculamos leaf_factor para llenar hojas según p y fill_factor
+            new_l = min(l_max, max(2, math.ceil(N / (p * f))))
+
+            # Si no cambia, convergimos
+            if new_l == l:
+                break
+            l = new_l
+
+        # Asignamos valores finales
         self.file.leaf_factor = l
         self.file.index_factor = i
+
         with open(self.file.filename, "r+b") as fh:
             fh.seek(0)
             fh.write(self.file.HEADER_STRUCT.pack(l, i))
