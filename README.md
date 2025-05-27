@@ -2,15 +2,16 @@
 
 <table>
 <tr>
-<td width="300px">
-  <img src="https://github.com/user-attachments/assets/cf36fe01-1b66-4ecf-beae-f06a178f91ba" width="250px"/>
+<td align="center">
+  <img src="https://github.com/user-attachments/assets/cf36fe01-1b66-4ecf-beae-f06a178f91ba" height="250px"/><br/>
+  <sub><strong>Logo</strong></sub>
 </td>
-<td>
-  <img src="https://github.com/user-attachments/assets/0bdaff2e-c4e2-4ec5-b518-9870d5d575b2" width="400px"/>
+<td align="center">
+  <img src="https://github.com/user-attachments/assets/0bdaff2e-c4e2-4ec5-b518-9870d5d575b2" height="250px"/><br/>
+  <sub><strong>SQL Interface</strong></sub>
 </td>
 </tr>
 </table>
-
 
 **DBMSKuna** is a multimodal database management system developed for the course **CS2702 - DATABASE II** at UTEC.  
 It integrates advanced file organization and indexing structures to support queries over structured and unstructured data using a custom SQL-like language and RESTful API.
