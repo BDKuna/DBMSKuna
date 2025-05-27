@@ -43,15 +43,14 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## 📂 Dataset (falta)
+## 📂 Dataset 
 
-We use real-world datasets from [Kaggle](https://www.kaggle.com) for indexing and performance evaluation.
+DBMSKuna supports any structured dataset in CSV format.
 
-- The dataset files are located in the `/datasets` folder.
-- Ensure the necessary files are available and preprocessed before running the indexing modules.
-- Examples of supported data: beans, images with embeddings, spatial coordinates, and customer records.
-
-📎 For more details on dataset structure, visit the [Wiki Dataset Page](https://github.com/BDKuna/DBMSKuna/wiki/Dataset).
+- Users can import their own data by specifying the CSV file path and defining the schema through the system’s SQL-like language.
+- The engine automatically indexes the dataset using the selected indexing strategy (AVL, B+Tree, Hashing, etc.).
+- Records are parsed and stored using binary serialization, with support for:
+  - Integers, Floats, Strings (VARCHAR), Points (for spatial indexing). 
 
 
 ## 👥 Team Members
