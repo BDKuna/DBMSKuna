@@ -4,13 +4,17 @@ import random
 from faker import Faker
 
 def generate_inventory_csv(path, n, seed=None, dims=(100, 100)):
-
+    """
+    Genera un CSV de inventarios con columnas:
+    id,name,category,subcategory,brand,price,weight_kg,
+    length_cm,width_cm,height_cm,geom,stock,fecha_ingreso,descripcion
+    donde 'geom' unifica location_x y location_y.
+    """
     fake = Faker()
     if seed is not None:
         random.seed(seed)
         Faker.seed(seed)
 
-    # Definición simplificada de categorías
     CATEGORY_MAP = {
         'Electronics': {
             'subcategories': {'Phones': ['Apple','Samsung'],
@@ -41,8 +45,7 @@ def generate_inventory_csv(path, n, seed=None, dims=(100, 100)):
         writer = csv.writer(f)
         writer.writerow([
             'id','name','category','subcategory','brand','price','weight_kg',
-            'length_cm','width_cm','height_cm','location_x','location_y',
-            'stock','fecha_ingreso'
+            'length_cm','width_cm','height_cm','geom','stock','fecha_ingreso','descripcion'
         ])
         for i in range(1, n+1):
             cat = random.choice(list(CATEGORY_MAP))
@@ -57,75 +60,24 @@ def generate_inventory_csv(path, n, seed=None, dims=(100, 100)):
             height = round(random.uniform(*dr[2]), 2)
             x = round(random.uniform(0, dims[0]), 2)
             y = round(random.uniform(0, dims[1]), 2)
+            geom = f"({x},{y})"
             stock = random.randint(*cfg['stock'])
             fecha = fake.date_between(start_date='-365d', end_date='today').isoformat()
             name = f"{brand} {sub.rstrip('s')}"
+            descripcion = fake.text(max_nb_chars=80).replace("\n", " ")
             writer.writerow([
                 i, name, cat, sub, brand, price, weight,
-                length, width, height, x, y, stock, fecha
-            ])
-
-def generate_geospatial_csv(path, n, seed=None,
-                            lat_range=(-12.25, -11.75),
-                            lon_range=(-77.25, -76.75)):
-
-    fake = Faker()
-    if seed is not None:
-        random.seed(seed)
-        Faker.seed(seed)
-
-    POI_TYPES = {
-        'Restaurant': (11,23),
-        'Hospital':   (0,23),
-        'School':     (7,18),
-        'Cafe':       (6,22)
-    }
-
-    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
-    with open(path, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            'id','name','type','geom','address',
-            'horario_apertura','horario_cierre','rating','description'
-        ])
-        for i in range(1, n+1):
-            poi = random.choice(list(POI_TYPES))
-            name = fake.company()
-            lat = round(random.uniform(*lat_range), 6)
-            lon = round(random.uniform(*lon_range), 6)
-            geom = f"({lat},{lon})"
-            address = fake.address().replace("\n", ", ")
-            open_h, close_h = POI_TYPES[poi]
-            apertura = f"{open_h:02d}:00"
-            cierre = f"{random.randint(open_h + 4, close_h):02d}:00"
-            rating = round(random.uniform(1,5), 1)
-            desc = fake.text(max_nb_chars=100).replace("\n", " ")
-            writer.writerow([
-                i, name, poi, geom, address,
-                apertura, cierre, rating, desc
+                length, width, height, geom, stock, fecha, descripcion
             ])
 
 if __name__ == "__main__":
-    # Generar inventarios
     generate_inventory_csv(
         path="inventarios.csv",
-        n=100,
+        n=1000,
         seed=42,
         dims=(200, 200)
     )
     print("inventarios.csv creado")
-
-    """
-    # Generar puntos de interés
-    generate_geospatial_csv(
-        path="pois.csv",
-        n=500,
-        seed=123,
-        lat_range=(-12.3, -12.0),
-        lon_range=(-77.2, -77.0)
-    )
-    print("pois.csv creado")
-    """
 
   
     """
