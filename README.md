@@ -7,12 +7,6 @@ It integrates advanced file organization and indexing structures to support quer
 
 ---
 
-## 🌐 Presentation
-
-> 🎥 Watch our video demo here: [Video Presentation](https://link-a-tu-video.com) *(max 15 minutes)*
-
----
-
 ## 🧠 Project Overview
 
 DBMSKuna supports indexing techniques such as:
@@ -22,7 +16,7 @@ DBMSKuna supports indexing techniques such as:
 - 🧮 **Extendible Hashing**
 - 🌳 **B+ Tree**
 - 🗺️ **R-Tree** for spatial and multidimensional data
-- 🎛️ **BRIN**
+- 🎛️ **BRIN** (Legacy)
 
 It also features:
 
@@ -49,7 +43,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## 📂 Dataset
+## 📂 Dataset (falta)
 
 We use real-world datasets from [Kaggle](https://www.kaggle.com) for indexing and performance evaluation.
 
@@ -64,11 +58,11 @@ We use real-world datasets from [Kaggle](https://www.kaggle.com) for indexing an
 
 | Name                 | Email                            | GitHub User                               |
 |----------------------|----------------------------------|--------------------------------------------|
+| Eduardo Aragon       | eduardo.aragon@utec.edu.pe       | [EduardoAragon11](https://github.com/EduardoAragon11)|
 | Jorge Quenta         | jorge.quenta@utec.edu.pe         | [jorge-qs](https://github.com/jorge-qs)     |
-| [Nombre Integrante 2]| correo2@utec.edu.pe              | [usuario2](https://github.com/usuario2)     |
-| [Nombre Integrante 3]| correo3@utec.edu.pe              | [usuario3](https://github.com/usuario3)     |
-| [Nombre Integrante 4]| correo4@utec.edu.pe              | [usuario4](https://github.com/usuario4)     |
-| [Nombre Integrante 5]| correo5@utec.edu.pe              | [usuario5](https://github.com/usuario5)     |
+| Mikel Bracamonte     | mikel.bracamonte@utec.edu.pe              | [Mikel-Bracamonte](https://github.com/Mikel-Bracamonte)     |
+| Sergio Lezama| sergio.lezama@utec.edu.pe              | [SergioSLO](https://github.com/SergioSLO)     |
+| Jose Paca| jose.paca@utec.edu.pe              | [JFpro160](https://github.com/JFpro160)     |
 
 ## 📈 Results
 
