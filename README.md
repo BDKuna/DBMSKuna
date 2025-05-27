@@ -71,16 +71,6 @@ We performed benchmarking tests on all implemented indexing structures using dat
 - ⏱️ Execution Time (milliseconds)
 - 📀 Disk Access Count (Read/Write Operations)
 
-### Summary Table:
-
-| Index Type       | Insert Time | Search Time | Disk Reads | Disk Writes |
-|------------------|-------------|-------------|------------|-------------|
-| Sequential File  | 25 ms       | 90 ms       | 100        | 30          |
-| ISAM             | 20 ms       | 50 ms       | 60         | 15          |
-| Extendible Hash  | 15 ms       | 20 ms       | 40         | 10          |
-| B+ Tree          | 18 ms       | 15 ms       | 35         | 12          |
-| R-Tree           | 30 ms       | 18 ms       | 38         | 14          |
-
 📊 You can view detailed performance plots and comparison charts on the [Results Wiki Page](https://github.com/BDKuna/DBMSKuna/wiki/Results).
 
 
