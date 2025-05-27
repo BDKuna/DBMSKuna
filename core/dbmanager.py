@@ -55,7 +55,7 @@ class DBManager:
         with open(f"{path}/metadata.dat", "wb") as file:
             pickle.dump(table_schema, file)
 
-    def get_index(self, table_schema : TableSchema, column_name : str): # TODO falta crear un nuevo indice NoIndex
+    def get_index(self, table_schema : TableSchema, column_name : str):
         index_name = f"{table_schema.table_name}.{column_name}"
         if index_name in self.indexes:
             return self.indexes[index_name]

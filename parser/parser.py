@@ -503,7 +503,7 @@ class Parser:
             between_condition.left = ConditionColumn(column_name)
             if not self.match_values():
                 self.error("expected a value after BETWEEN keyword")
-            between_condition.mid = ConditionValue(self.str_into_type(self.previous.lexema, self.previous)) # TODO depende del tipo (en utils)
+            between_condition.mid = ConditionValue(self.str_into_type(self.previous.lexema, self.previous))
             if not self.match(Token.Type.AND):
                 self.error("expected AND keyword after value in BETWEEN clause")
             if not self.match_values():
