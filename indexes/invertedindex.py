@@ -69,3 +69,20 @@ class InvertedIndex:
     def search(self, consulta:str):
         # TODO 
         pass
+
+def test():
+    inv = InvertedFile("test.dat")
+    d1 : Dict = {"2": 3, "8": 1, "3": 4}
+    d2 : Dict = {"32": 2, "54": 99, "54131": 1}
+    d3 : Dict = {"12": 2, "514": 99, "54131": 1}
+    
+    inv.append(d1)
+    inv.append(d2)
+    print(inv.read(0))
+    print(inv.read(1))
+    inv.write(1, d3)
+    print(inv.read(0))
+    print(inv.read(1))
+    
+    
+test()
