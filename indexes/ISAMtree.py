@@ -868,7 +868,7 @@ class ISAMIndex:
         # 3) construir root
         self.file.build_root()
 
-        #print(self)
+        print(self)
 
     def rangeSearch(self, ini, end) -> list[int]:
         """
@@ -879,13 +879,7 @@ class ISAMIndex:
             ini = utils.get_min_value(self.column)
         if end is None:
             end = utils.get_max_value(self.column)
-        lf, ix = self.file.read_header()
-        self.file.leaf_factor = lf
-        self.file.index_factor = ix
         self.logger.warning(f"RANGE-SEARCH: {ini}, {end}")
-        self.logger.warning(self.file.filename)
-        self.logger.warning(self.file.leaf_factor)
-        self.logger.warning(self.file.index_factor)
 
         empty_key = utils.get_empty_value(self.column)
         results = []
@@ -917,7 +911,7 @@ class ISAMIndex:
                     return results
                 results.append(rec.datapos)
             if lp.next_page < 1:
-                #print(self)
+                print(self)
                 break
             lp = self.file.read_leaf_page(lp.next_page)
 

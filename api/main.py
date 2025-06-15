@@ -4,11 +4,11 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 import subprocess
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import time
-subprocess.check_call([sys.executable, "-m", "pip", "install", "python-multipart"])
+
 try:
     from parser import parser
 except ImportError:

@@ -215,8 +215,8 @@ class ExtendibleHashTree:
     def __init__(self,
                  schema: TableSchema,
                  column: Column,
-                 bucket_capacity: int = 16,
-                 max_depth: int = 850):
+                 bucket_capacity: int = 4,
+                 max_depth: int = 20):
         if column.index_type != IndexType.HASH:
             raise Exception("Column index type mismatch for HASH")
         self.logger = logger.CustomLogger(f"EHTREE-{schema.table_name}-{column.name}")
@@ -351,17 +351,12 @@ class ExtendibleHashTree:
             lo = utils.get_min_value(self.column)
         if(hi == None):
             hi = utils.get_max_value(self.column)
-        print(f"RANGE-SEARCH: {lo}, {hi}")
+        self.logger.warning(f"RANGE-SEARCH: {lo}, {hi}")
         out = []
         # recorro todos y filtro en memoria:
-
-        print("getall")
-        rec = self.get_all()
-        print(len(rec))
-        print(rec[:10])
-        for i in rec:
-            if lo <= i.key <= hi:
-                out.append(i.pointer)
+        for rec in self.get_all():
+            if lo <= rec.key <= hi:
+                out.append(rec.pointer)
         return out
 
     def delete(self, key) -> None:
@@ -383,27 +378,14 @@ class ExtendibleHashTree:
         Recorre todo el árbol y devuelve la lista de Record(key, pointer)
         sin convertirlos aún en punteros.
         """
-        if os.path.exists(self.tree_path):
-            with open(self.tree_path, "rb") as f:
-                self.root = pickle.load(f)
-        else:
-            # Dos hojas iniciales 0 y 1
-            self.root = TreeNode(0, "")
-            left  = TreeNode(1, "0")
-            right = TreeNode(1, "1")
-            lb = self.fm.create_bucket()
-            rb = self.fm.create_bucket()
-            left.bucket_id  = lb.bucket_id
-            right.bucket_id = rb.bucket_id
-            self.root.left  = left
-            self.root.right = right
-            self._save_tree()
         recs: list[Record] = []
-        def dfs(n: TreeNode):
-            if n.is_leaf():
-                recs.extend(self.fm.load_bucket(n.bucket_id).get_all())
+        def dfs(node: TreeNode):
+            if node.is_leaf():
+                recs.extend(self.fm.load_bucket(node.bucket_id).get_all())
             else:
-                dfs(n.left); dfs(n.right)
+                dfs(node.left)
+                dfs(node.right)
+
         dfs(self.root)
         return recs
 
