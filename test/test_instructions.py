@@ -189,7 +189,5 @@ def test_rtree_insertions():
     plt.grid(True)
     plt.show()
 
-if __name__ == "__main__":
-    # Run the tests
-    test_rtree_insertions()
-    test_index_insertions()
+
+test_rtree_insertions()

@@ -263,7 +263,7 @@ class AVLTree:
             return self.indexFile.write(n)
         #buscamos recursivamente
         if n.val == point.val:
-            self.logger.warning("DUPLICATE NODE")
+            self.logger.error("DUPLICATE NODE")
             return pos
         if n.val > point.val:
             point.right = self._add_aux(n, point.right)

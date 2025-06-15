@@ -4,7 +4,7 @@ import logging
 class CustomLogger:
 	def __init__(self, name):
 		self.logger = logging.getLogger(name)
-		self.logger.setLevel(logging.ERROR)
+		self.logger.setLevel(logging.WARNING)
 
 		# 👇 Check to avoid duplicate handlers
 		if not self.logger.handlers:

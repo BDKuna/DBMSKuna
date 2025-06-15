@@ -4,11 +4,11 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 import subprocess
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import time
-subprocess.check_call([sys.executable, "-m", "pip", "install", "python-multipart"])
+
 try:
     from parser import parser
 except ImportError:
@@ -61,23 +61,4 @@ def query(q: Query):
         'total': total,
         'message': message,
         'execution_time': end - start
-    }
-
-@app.post("/upload-csv/")
-async def upload_csv(csv_file: UploadFile = File(...)):
-    if csv_file.content_type != 'text/csv':
-        return {"status_code":400, "content":{"message": "El archivo debe ser un CSV"}}
-
-    # save the file
-    file_location = f"temp/{csv_file.filename}"
-
-    print(csv_file.filename)
-    print("Processing file...")
-
-    # Retornar una respuesta útil
-    return {
-        'data': [],
-        'total': 0,
-        'message': f"Archivo {csv_file.filename} procesado correctamente.",
-        'execution_time': 0
     }
