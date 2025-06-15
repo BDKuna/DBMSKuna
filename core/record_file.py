@@ -2,6 +2,7 @@ import struct
 from core.schema import TableSchema, DataType
 from core import utils
 import logger
+from core import stats
 import os
 
 class Record:
@@ -107,7 +108,6 @@ class RecordFile:
 		self.schema = schema
 		self.node_size = FreeListNode.get_node_size(schema)
 		self.logger = logger.CustomLogger(f"RECORDFILE-{schema.table_name}".upper())
-		#self.logger.logger.setLevel(logging.WARNING)
 		
 		if not os.path.exists(self.filename):
 			self.logger.fileNotFound(self.filename)
@@ -141,6 +141,7 @@ class RecordFile:
 		with open(self.filename, "ab") as file:
 			offset = file.tell() // self.node_size
 			node = FreeListNode(record)
+			stats.count_write()
 			file.write(node.pack())
 			self.logger.writingRecord(self.filename, offset, record.values[0], node.next_del)  # should be the first an id
 			return offset
@@ -149,6 +150,7 @@ class RecordFile:
 		with open(self.filename, "rb") as file:
 			self.logger.readingNode(self.filename, pos)
 			file.seek(self.HEADER_SIZE + (pos * self.node_size))
+			stats.count_read()
 			data = file.read(self.node_size)
 			if not data:
 				self.logger.invalidPosition(self.filename, pos)
@@ -161,6 +163,7 @@ class RecordFile:
 		with open(self.filename, "rb+") as file:
 			offset = self.HEADER_SIZE + pos * self.node_size
 			file.seek(offset)
+			stats.count_write()
 			if file.tell() != offset:
 				self.logger.invalidPosition(self.filename, pos)
 				raise Exception(f"Invalid record position: {pos}")

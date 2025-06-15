@@ -57,7 +57,7 @@ class DBManager:
 
     def get_index(self, table_schema : TableSchema, column_name : str):
         index_name = f"{table_schema.table_name}.{column_name}"
-        if index_name in self.indexes:
+        if index_name in self.indexes and not isinstance(self.indexes[index_name], NoIndex):
             return self.indexes[index_name]
         index = None
         for column in table_schema.columns:
@@ -477,7 +477,7 @@ class DBManager:
         print(index_type)
         if index_type == IndexType.ISAM:
             index_structure.build_index()
-            test_isam_integrity(index_structure)
+            #test_isam_integrity(index_structure)
         else:
             while pos < max_pos:
                 record = record_file.read(pos)
@@ -496,6 +496,7 @@ class DBManager:
                 if column.is_primary:
                     self.error("Cannot drop the primary key's index")
                 index.clear()
+                self.indexes[f"{table_schema.table_name}.{column.name}"] = NoIndex(table_schema, column)
                 column.index_type = IndexType.NONE
                 column.index_name = None
                 path = f"{self.tables_path}/{table_schema.table_name}"

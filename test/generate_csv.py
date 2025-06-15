@@ -1,6 +1,8 @@
 import csv
 import os
 import random
+
+from anyio import sleep
 from faker import Faker
 from pandas.io.clipboard import init_dev_clipboard_clipboard
 
@@ -34,7 +36,7 @@ def generate_inventory_csv(path, n, seed=None, dims=(100, 100)):
                              'Laptops': ((30,40),(20,30),(1,3))},
             'weight':       {'Phones': (0.1,0.5),
                              'Laptops': (1,3)},
-            'stock':        (0,100)
+            'stock':        (0,10000)
         },
         'Furniture': {
             'subcategories': {'Tables': ['IKEA'],
@@ -45,7 +47,7 @@ def generate_inventory_csv(path, n, seed=None, dims=(100, 100)):
                              'Chairs': ((40,60),(40,60),(80,100))},
             'weight':       {'Tables': (20,80),
                              'Chairs': (5,20)},
-            'stock':        (0,50)
+            'stock':        (0,10000)
         }
     }
 
@@ -82,152 +84,186 @@ def generate_inventory_csv(path, n, seed=None, dims=(100, 100)):
 def generate_stats(query, times, reads, writes):
     stats.reset_counters()
     start = time.time()
-    result = parser.execute_sql(query)
+    print(parser.execute_sql(query))
     end = time.time()
     counter = stats.get_counts()
-
+    print(counter)
     times.append(end - start)
     reads.append(counter["reads"])
     writes.append(counter["writes"])
 
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+def zero_to_small(val, small=1e-5):
+    return val if val > 0 else small
+
+def plot_times(times, indices, cant):
+    # Índices con No Index al inicio
+    categories = ["No Index"] + indices
+    queries = ["Index Creation", "Range Query", "Greater Query", "Equal Query", "Index Drop"]
+
+    # Organizar datos para gráfico (por consulta, por índice)
+    # Queremos ordenar las consultas en el orden queries: times[3], times[0], times[1], times[2], times[4]
+    # times list is: [Range, Greater, Equal, Creation, Drop]
+    data = []
+    data.append([zero_to_small(times[3][i]) for i in range(len(categories))])  # Index Creation
+    data.append([zero_to_small(times[0][i]) for i in range(len(categories))])  # Range Query
+    data.append([zero_to_small(times[1][i]) for i in range(len(categories))])  # Greater Query
+    data.append([zero_to_small(times[2][i]) for i in range(len(categories))])  # Equal Query
+    data.append([zero_to_small(times[4][i]) for i in range(len(categories))])  # Index Drop
+
+    n_groups = len(categories)
+    n_queries = len(queries)
+
+    bar_width = 0.15
+    index = np.arange(n_groups)
+
+    plt.figure(figsize=(12,6))
+    for i in range(n_queries):
+        plt.bar(index + i*bar_width, data[i], bar_width, label=queries[i])
+
+    plt.xlabel("Index Type")
+    plt.ylabel("Time (seconds)")
+    plt.title(f"Execution Times (seconds) - Inventory {cant} records (Log Scale)")
+    plt.xticks(index + bar_width * (n_queries-1)/2, categories)
+    plt.yscale('log')
+    plt.legend()
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+def plot_reads_writes(reads_or_writes, indices, cant, title):
+    # Índices con No Index al inicio
+    categories = ["No Index"] + indices
+    queries = ["Index Creation", "Range Query", "Greater Query", "Equal Query"]
+
+    # reads_or_writes list is [Range, Greater, Equal, Creation]
+    # Para graficar orden: Creation, Range, Greater, Equal
+    data = []
+    data.append([zero_to_small(reads_or_writes[3][i]) for i in range(len(categories))])  # Index Creation
+    data.append([zero_to_small(reads_or_writes[0][i]) for i in range(len(categories))])  # Range Query
+    data.append([zero_to_small(reads_or_writes[1][i]) for i in range(len(categories))])  # Greater Query
+    data.append([zero_to_small(reads_or_writes[2][i]) for i in range(len(categories))])  # Equal Query
+
+    n_groups = len(categories)
+    n_queries = len(queries)
+
+    bar_width = 0.15
+    index = np.arange(n_groups)
+
+    plt.figure(figsize=(12,6))
+    for i in range(n_queries):
+        plt.bar(index + i*bar_width, data[i], bar_width, label=queries[i])
+
+    plt.xlabel("Index Type")
+    plt.ylabel("Count")
+    plt.title(f"{title} - Inventory {cant} records (Log Scale)")
+    plt.xticks(index + bar_width * (n_queries-1)/2, categories)
+    plt.yscale('log')
+    plt.legend()
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+# Ejemplo de uso:
+
+# cant = número de registros, ej: 1000
+# indices = lista con índices usados, ej: ['HASH', 'BTREE', 'AVL', 'ISAM']
+# times, reads, writes = listas de listas según tu estructura
+
+# plot_times(times, indices, cant)
+# plot_reads_writes(reads, indices, cant, "Disk Reads")
+# plot_reads_writes(writes, indices, cant, "Disk Writes")
+
+
+
 if __name__ == "__main__":
     # Generar inventarios
     path = "data/inventarios.csv"
-    generate_inventory_csv(
-        path=path,
-        n=1000,
-        seed=42,
-        dims=(200, 200)
-    )
+    cantidades = [1000]
+
 
     manager = DBManager()
-    create = "CREATE TABLE inventarios (id INT PRIMARY KEY, name VARCHAR(100), category VARCHAR(50), subcategory VARCHAR(50), brand VARCHAR(50), price FLOAT, weight_kg FLOAT, length_cm FLOAT, width_cm FLOAT, height_cm FLOAT, geom VARCHAR(20), stock INT, fecha_ingreso VARCHAR(15), descripcion VARCHAR(250));"
-    indices= ["BTREE"]
-    create_index = [f"CREATE INDEX idx_stock_{idx} ON inventarios USING {idx}(stock);" for idx in indices]
-    drop_index = [f"DROP INDEX idx_stock_{idx} ON inventarios;" for idx in indices]
+    for cant in cantidades:
+        generate_inventory_csv(
+            path=(path + str(cant)),
+            n=cant,
+            seed=42,
+            dims=(200, 200)
+        )
 
-    select_range = "SELECT * FROM inventarios WHERE stock BETWEEN 25 AND 75;"
-    select_greater = "SELECT * FROM inventarios WHERE stock > 50;"
-    select_equal = "SELECT * FROM inventarios WHERE stock = 50;"
+        create = "CREATE TABLE inventarios (id INT PRIMARY KEY, name VARCHAR(100), category VARCHAR(50), subcategory VARCHAR(50), brand VARCHAR(50), price FLOAT, weight_kg FLOAT, length_cm FLOAT, width_cm FLOAT, height_cm FLOAT, geom POINT INDEX RTREE, stock INT, fecha_ingreso VARCHAR(15), descripcion VARCHAR(250));"
+        indices= ["HASH", "BTREE", "AVL", "ISAM"]
+        create_index = [f"CREATE INDEX idx_stock_{idx} ON inventarios USING {idx}(stock);" for idx in indices]
+        drop_index = [f"DROP INDEX idx_stock_{idx} ON inventarios;" for idx in indices]
 
-    times = [[] for _ in range(5)]
-    reads = [[] for _ in range(5)]
-    writes = [[] for _ in range(5)]
+        select_range = "SELECT * FROM inventarios WHERE stock BETWEEN 2500 AND 2600;"
+        select_greater = "SELECT * FROM inventarios WHERE stock > 9900;"
+        select_equal = "SELECT * FROM inventarios WHERE stock = 500;"
 
-    #create table
-    parser.execute_sql(create)
-    #insert data
-    manager.import_csv("inventarios", path)
-    #test with no index
-    generate_stats(select_range,times[0], reads[0], writes[0])
-    generate_stats(select_greater,times[1], reads[1], writes[1])
-    generate_stats(select_equal,times[2], reads[2], writes[2])
-    times[3].append(0)  # No index creation time
-    reads[3].append(0)  # No index reads
-    writes[3].append(0)  # No index writes
+        times = [[] for _ in range(5)]
+        reads = [[] for _ in range(5)]
+        writes = [[] for _ in range(5)]
 
-    times[4].append(0)  # No index drop time
-    reads[4].append(0)  # No index reads
-    writes[4].append(0)  # No index writes
-
-    for i, idx in enumerate(indices):
-        #create index
-        print(f"Creating index {idx}")
-        generate_stats(create_index[i],times[3], reads[3], writes[3])
-        #test with index
+        #create table
+        parser.execute_sql(create)
+        #insert data
+        manager.import_csv("inventarios", path+str(cant))
+        #test with no index
+        parser.execute_sql("INSERT INTO inventarios (id, name, category, subcategory, brand, price, weight_kg, length_cm, width_cm, height_cm, geom, stock, fecha_ingreso, descripcion) VALUES (0, 'Test', 'Test', 'Test', 'Test', 0.0, 0.0, 0.0, 0.0, 0.0, (1.0,1.0), 10000, '2023-10-01', 'Test record');")
         generate_stats(select_range,times[0], reads[0], writes[0])
         generate_stats(select_greater,times[1], reads[1], writes[1])
         generate_stats(select_equal,times[2], reads[2], writes[2])
-        #drop index
-        print(f"Dropping index {idx}")
-        generate_stats(drop_index[i],times[4], reads[4], writes[4])
+        times[3].append(0)  # No index creation time
+        reads[3].append(0)  # No index reads
+        writes[3].append(0)  # No index writes
 
-    # Print results
-    print("Execution times (seconds):")
-    for i, idx in enumerate(["No Index"] + indices):
-        print(f"{idx}:")
-        print(f"  Index Creation: {times[3][i]:.4f}")
-        print(f"  Range Query: {times[0][i]:.4f}")
-        print(f"  Greater Query: {times[1][i]:.4f}")
-        print(f"  Equal Query: {times[2][i]:.4f}")
-        print(f"  Index Drop: {times[4][i]:.4f}")
-    print("\nDisk Reads:")
-    for i, idx in enumerate(["No Index"] + indices):
-        print(f"{idx}:")
-        print(f"  Index Creation: {reads[3][i]}")
-        print(f"  Range Query: {reads[0][i]}")
-        print(f"  Greater Query: {reads[1][i]}")
-        print(f"  Equal Query: {reads[2][i]}")
-    print("\nDisk Writes:")
-    for i, idx in enumerate(["No Index"] + indices):
-        print(f"{idx}:")
-        print(f"  Index Creation: {writes[3][i]}")
-        print(f"  Range Query: {writes[0][i]}")
-        print(f"  Greater Query: {writes[1][i]}")
-        print(f"  Equal Query: {writes[2][i]}")
+        times[4].append(0)  # No index drop time
+        reads[4].append(0)  # No index reads
+        writes[4].append(0)  # No index writes
 
-    import matplotlib.pyplot as plt
-    import numpy as np
+        for i, idx in enumerate(indices):
+            #create index
+            print(f"Creating index {idx}")
+            generate_stats(create_index[i],times[3], reads[3], writes[3])
+            #test with index
+            generate_stats(select_range,times[0], reads[0], writes[0])
+            generate_stats(select_greater,times[1], reads[1], writes[1])
+            generate_stats(select_equal,times[2], reads[2], writes[2])
+            #drop index
+            print(f"Dropping index {idx}")
+            generate_stats(drop_index[i],times[4], reads[4], writes[4])
 
-    # Your indices list
-    indices = ["HASH", "BTREE", "AVL", "ISAM"]
-    queries = ["stock BETWEEN 1 AND 100", "stock > 50", "stock = 50"]
+        print("Results for inventory with", cant, "records:")
+        print("Execution times (seconds):")
+        for i, idx in enumerate(["No Index"] + indices):
+            print(f"{idx}:")
+            print(f"  Index Creation: {times[3][i]:.4f}")
+            print(f"  Range Query: {times[0][i]:.4f}")
+            print(f"  Greater Query: {times[1][i]:.4f}")
+            print(f"  Equal Query: {times[2][i]:.4f}")
+            print(f"  Index Drop: {times[4][i]:.4f}")
+        print("\nDisk Reads:")
+        for i, idx in enumerate(["No Index"] + indices):
+            print(f"{idx}:")
+            print(f"  Index Creation: {reads[3][i]}")
+            print(f"  Range Query: {reads[0][i]}")
+            print(f"  Greater Query: {reads[1][i]}")
+            print(f"  Equal Query: {reads[2][i]}")
+        print("\nDisk Writes:")
+        for i, idx in enumerate(["No Index"] + indices):
+            print(f"{idx}:")
+            print(f"  Index Creation: {writes[3][i]}")
+            print(f"  Range Query: {writes[0][i]}")
+            print(f"  Greater Query: {writes[1][i]}")
+            print(f"  Equal Query: {writes[2][i]}")
+        print("\n" + "="*50 + "\n")
 
-
-    def extract_phase_data(stats_list, query_idx, num_indices=4):
-        """
-        Extract data grouped by phase:
-        - Phase 0: No index (first measurement for query)
-        - Phases 1..num_indices: after each index creation (one per index)
-        Returns a list of length num_indices+1 with values
-        """
-        # First value is no index (initial)
-        no_index_val = stats_list[query_idx][0]
-
-        # Next values correspond to index phases, one for each index type
-        # Since for each index, after create, you appended one measurement for each query,
-        # those measurements come in order starting from index 1
-        # so the 1..num_indices values for this query start at 1 and go up by 1 each index
-        index_vals = []
-        start = 1  # first appended index measurement for this query
-        for i in range(num_indices):
-            # for each index, pick the (i+1)-th measurement of this query
-            # i.e. times[query_idx][i+1]
-            if len(stats_list[query_idx]) > i + 1:
-                index_vals.append(stats_list[query_idx][i + 1])
-            else:
-                index_vals.append(np.nan)
-        return [no_index_val] + index_vals
+        plot_times(times, indices, cant)
+        plot_reads_writes(reads, indices, cant, "Disk Reads")
+        plot_reads_writes(writes, indices, cant, "Disk Writes")
 
 
-    # Extract times, reads, writes for each query, grouped by phase
-    times_by_query = [extract_phase_data(times, i) for i in range(3)]
-    reads_by_query = [extract_phase_data(reads, i) for i in range(3)]
-    writes_by_query = [extract_phase_data(writes, i) for i in range(3)]
 
-    phases = ["No Index"] + indices
-
-
-    def plot_metric(metric_data, ylabel, title):
-        x = np.arange(len(phases))
-        width = 0.2
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        for i, query in enumerate(queries):
-            values = metric_data[i]
-            ax.bar(x + (i - 1) * width, values, width, label=query)
-
-        ax.set_xticks(x)
-        ax.set_xticklabels(phases)
-        ax.set_ylabel(ylabel)
-        ax.set_title(title)
-        ax.legend()
-        plt.tight_layout()
-        plt.show()
-
-
-    plot_metric(times_by_query, "Time (seconds)", "Query Execution Time by Index Type")
-    plot_metric(reads_by_query, "Disk Reads", "Disk Reads by Index Type")
-    plot_metric(writes_by_query, "Disk Writes", "Disk Writes by Index Type")
