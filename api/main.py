@@ -62,22 +62,3 @@ def query(q: Query):
         'message': message,
         'execution_time': end - start
     }
-
-@app.post("/upload-csv/")
-async def upload_csv(csv_file: UploadFile = File(...)):
-    if csv_file.content_type != 'text/csv':
-        return {"status_code":400, "content":{"message": "El archivo debe ser un CSV"}}
-
-    # save the file
-    file_location = f"temp/{csv_file.filename}"
-
-    print(csv_file.filename)
-    print("Processing file...")
-
-    # Retornar una respuesta útil
-    return {
-        'data': [],
-        'total': 0,
-        'message': f"Archivo {csv_file.filename} procesado correctamente.",
-        'execution_time': 0
-    }
