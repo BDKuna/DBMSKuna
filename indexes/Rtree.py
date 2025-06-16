@@ -1,12 +1,7 @@
 import subprocess, sys
 import os
 
-# Intentar instalar e importar Rtree
-try:
-    from rtree import index
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "Rtree"])
-    from rtree import index
+from rtree import index
 
 # Asegurar acceso al paquete raíz
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

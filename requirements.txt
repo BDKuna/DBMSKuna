@@ -1,0 +1,8 @@
+fastapi
+pydantic
+bitarray
+matplotlib
+pytest
+unittest
+rtree
+faker
