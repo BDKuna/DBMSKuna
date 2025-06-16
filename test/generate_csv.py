@@ -2,7 +2,6 @@ import csv
 import os
 import random
 from faker import Faker
-from pandas.io.clipboard import init_dev_clipboard_clipboard
 
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in os.sys.path:
