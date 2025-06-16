@@ -7,10 +7,9 @@ import csv
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from indexes.invertedindex import InvertedFile
+from indexes.invertedindex import InvertedFile, BUCKET_LIMIT
 
 # --- Configuración fija ---
-BUCKET_LIMIT = 1000                      
 CSV_PATH     = 'data/dataset.csv'        
 INDEX_PATH   = 'table_column_texts.dat'  
 
@@ -20,7 +19,9 @@ from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
 # nltk.download('stopwords')  # descomenta si es la primera vez
 
-
+_CLEAN_RE   = re.compile(r'[^a-z0-9]')           # deja sólo letras y dígitos
+_STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
+_STEMMER    = SnowballStemmer('english')         # stemmer inglés
 
 # TODO Quenta
 def bagOfWords(text:str):
