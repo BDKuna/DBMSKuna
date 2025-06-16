@@ -68,7 +68,7 @@ class InvertedIndex:
         # TODO spimi PACA
         pass
 
-    def getByWord(self,word):
+    def getByWord(self,word)->(dict[int,int],int):
         # se necesita devolver los documentos con su tf, y el idf, en el q se encuntra la palabra
         index = {1:1,2:2,3:1,4:4,5:3}
         total_docs = 100 #guardar en header
@@ -80,7 +80,7 @@ class InvertedIndex:
         return 1000
 
 
-    def search(self, consulta:str):
+    def search(self, consulta:str)->list[int]:
         query_tf = bagOfWords(consulta)
         vector_doc = [self.getByWord(word) for word in query_tf]
 
