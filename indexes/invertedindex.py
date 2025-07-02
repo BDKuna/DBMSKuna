@@ -72,9 +72,9 @@ class InvertedIndex:
 
 def test():
     inv = InvertedFile("test.dat")
-    d1 : Dict = {"2": 3, "8": 1, "3": 4}
-    d2 : Dict = {"32": 2, "54": 99, "54131": 1}
-    d3 : Dict = {"12": 2, "514": 99, "54131": 1}
+    d1 : Dict = {"w1": {"t1": 3, "t2": 4, "t3": 2}, "w2": {"t1": 3, "t2": 3, "t4": 3}}
+    d2 : Dict = {"w4": {"t1": 3, "t2": 1, "t5": 6}, "w1": {"t1": 4, "t5": 2, "t6": 4}}
+    d3 : Dict = {"w2": {"t3": 3, "t4": 1, "t5": 6}, "w4": {"t2": 4, "t3": 2, "t7": 4}}
     
     inv.append(d1)
     inv.append(d2)
