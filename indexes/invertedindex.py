@@ -1,4 +1,3 @@
-import struct
 import os
 import sys
 import pickle
@@ -60,13 +59,167 @@ class InvertedFile:
         return pos
 
 class InvertedIndex:
-    def __init__(self):
-        #self.filename = InvertedFile()
-        pass
+    def __init__(self, filename: str):
+        self.filename = filename
+        self.logger = logger.CustomLogger("INVERTED-INDEX")
+
+        if not os.path.exists(filename):
+            self.logger.error(f"Archivo {filename} no existe.")
+            raise FileNotFoundError(f"Archivo {filename} no encontrado.")
+
+        self.logger.info(f"Inicializando InvertedIndex con archivo {filename}.")
+        self.file = InvertedFile(filename)
+
+    def _sort_dict(self, d: Dict) -> Dict:
+        return {
+            word: dict(sorted(postings.items()))
+            for word, postings in sorted(d.items())
+        }
+
+    def _generate_merged_buckets(self, d1: Dict, d2: Dict):
+        """
+        Generador que devuelve múltiples buckets resultado de merge entre d1 y d2,
+        donde cada bucket serializado no supera BUCKET_LIMIT.
+        """
+        from collections import OrderedDict
+
+        merged = OrderedDict()
+        keys1 = sorted(d1.keys())
+        keys2 = sorted(d2.keys())
+        i, j = 0, 0
+
+        def flush_bucket(bucket):
+            yield dict(bucket)
+
+        bucket = OrderedDict()
+
+        while i < len(keys1) and j < len(keys2):
+            k1, k2 = keys1[i], keys2[j]
+
+            if k1 < k2:
+                word = k1
+                postings = dict(sorted(d1[k1].items()))
+                i += 1
+            elif k1 > k2:
+                word = k2
+                postings = dict(sorted(d2[k2].items()))
+                j += 1
+            else:
+                word = k1
+                postings1 = d1[k1]
+                postings2 = d2[k2]
+                merged_postings = {}
+                for doc in sorted(set(postings1) | set(postings2)):
+                    merged_postings[doc] = postings1.get(doc, 0) + postings2.get(doc, 0)
+                postings = merged_postings
+                i += 1
+                j += 1
+
+            bucket[word] = postings
+
+            # Si se pasa el límite al serializar, rendimos y comenzamos otro
+            if len(pickle.dumps(bucket)) > BUCKET_LIMIT:
+                bucket.pop(word)
+                yield from flush_bucket(bucket)
+                bucket = OrderedDict()
+                bucket[word] = postings
+
+        # Resto de claves
+        for k in keys1[i:]:
+            bucket[k] = dict(sorted(d1[k].items()))
+            if len(pickle.dumps(bucket)) > BUCKET_LIMIT:
+                bucket.pop(k)
+                yield from flush_bucket(bucket)
+                bucket = OrderedDict()
+                bucket[k] = dict(sorted(d1[k].items()))
+
+        for k in keys2[j:]:
+            bucket[k] = dict(sorted(d2[k].items()))
+            if len(pickle.dumps(bucket)) > BUCKET_LIMIT:
+                bucket.pop(k)
+                yield from flush_bucket(bucket)
+                bucket = OrderedDict()
+                bucket[k] = dict(sorted(d2[k].items()))
+
+        if bucket:
+            yield from flush_bucket(bucket)
+
+    def _merge_bucket_range(self, l1: int, r1: int, l2: int, r2: int, output_file: InvertedFile) -> list:
+        """
+        Fusiona los buckets desde [l1, r1] con [l2, r2] y los escribe en output_file.
+        Devuelve las nuevas posiciones en output_file.
+        """
+        positions = []
+        i, j = l1, l2
+        while i <= r1 and j <= r2:
+            d1 = self.file.read(i)
+            d2 = self.file.read(j)
+            for bucket in self._generate_merged_buckets(d1, d2):
+                pos = output_file.append(bucket)
+                positions.append(pos)
+            i += 1
+            j += 1
+
+        # Copiar los buckets restantes sin cambios
+        for k in range(i, r1 + 1):
+            pos = output_file.append(self.file.read(k))
+            positions.append(pos)
+        for k in range(j, r2 + 1):
+            pos = output_file.append(self.file.read(k))
+            positions.append(pos)
+
+        return positions
 
     def buildIndex(self):
-        # TODO spimi PACA
-        pass
+        self.logger.info("Iniciando construcción del índice con SPIMI por rondas.")
+        num_buckets = os.path.getsize(self.filename) // BUCKET_LIMIT
+
+        # Ordenar cada bucket individualmente
+        for i in range(num_buckets):
+            d = self.file.read(i)
+            d_sorted = self._sort_dict(d)
+            self.file.write(i, d_sorted)
+
+        current_file = self.file
+        current_name = self.filename
+        round_num = 1
+
+        group_size = 1
+        while group_size < num_buckets:
+            self.logger.info(f"--- Ronda #{round_num} con grupo de tamaño {group_size} ---")
+            temp_name = current_name + f".tmp"
+            if os.path.exists(temp_name):
+                os.remove(temp_name)
+
+            output_file = InvertedFile(temp_name)
+            new_positions = []
+
+            for i in range(0, num_buckets, 2 * group_size):
+                l1 = i
+                r1 = min(i + group_size - 1, num_buckets - 1)
+                l2 = i + group_size
+                r2 = min(i + 2 * group_size - 1, num_buckets - 1)
+
+                if l2 > r2:
+                    # No hay pareja, copiar directo
+                    for k in range(l1, r1 + 1):
+                        pos = output_file.append(current_file.read(k))
+                        new_positions.append(pos)
+                else:
+                    # Fusionar los dos rangos
+                    positions = self._merge_bucket_range(l1, r1, l2, r2, output_file)
+                    new_positions.extend(positions)
+
+            # Reemplazar archivos
+            os.remove(current_name)
+            os.rename(temp_name, current_name)
+            current_file = InvertedFile(current_name)
+            self.file = current_file
+            num_buckets = len(new_positions)
+            group_size *= 2
+            round_num += 1
+
+        self.logger.info("Índice invertido completamente construido y ordenado.")
 
     def getByWord(self,word)->(dict[int,int],int):
         # se necesita devolver los documentos con su tf, y el idf, en el q se encuntra la palabra
