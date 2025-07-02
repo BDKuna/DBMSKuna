@@ -10,6 +10,8 @@ import logger
 
 BUCKET_LIMIT = 1024
 
+BType = Dict[str, Dict[str, int]]
+
 class InvertedFile:
     def __init__(self, filename: str):
         self.filename = filename
@@ -19,20 +21,20 @@ class InvertedFile:
             with open(filename, 'wb') as f:
                 self.logger.info(f"Archivo {filename} creado.")
 
-    def _serialize(self, d: Dict) -> bytes:
+    def _serialize(self, d: BType) -> bytes:
         data = pickle.dumps(d)
         if len(data) > BUCKET_LIMIT:
             raise ValueError(f"El diccionario serializado excede BUCKET_LIMIT de {BUCKET_LIMIT} bytes.")
         return data.ljust(BUCKET_LIMIT, b'\x00')
 
-    def _deserialize(self, b: bytes) -> Dict:
+    def _deserialize(self, b: bytes) -> BType:
         try:
             return pickle.loads(b.rstrip(b'\x00'))
         except Exception as e:
             self.logger.error(f"Error de deserialización: {e}")
             return {}
 
-    def read(self, pos: int) -> Dict:
+    def read(self, pos: int) -> BType:
         with open(self.filename, 'rb') as f:
             f.seek(pos * BUCKET_LIMIT)
             data = f.read(BUCKET_LIMIT)
@@ -41,14 +43,14 @@ class InvertedFile:
                 return {}
             return self._deserialize(data)
 
-    def write(self, pos: int, d: Dict):
+    def write(self, pos: int, d: BType):
         data = self._serialize(d)
         with open(self.filename, 'r+b') as f:
             f.seek(pos * BUCKET_LIMIT)
             f.write(data)
         self.logger.info(f"Escrito bucket en posición {pos}.")
 
-    def append(self, d: Dict) -> int:
+    def append(self, d: BType) -> int:
         data = self._serialize(d)
         with open(self.filename, 'ab') as f:
             f.write(data)
@@ -72,9 +74,9 @@ class InvertedIndex:
 
 def test():
     inv = InvertedFile("test.dat")
-    d1 : Dict = {"w1": {"t1": 3, "t2": 4, "t3": 2}, "w2": {"t1": 3, "t2": 3, "t4": 3}}
-    d2 : Dict = {"w4": {"t1": 3, "t2": 1, "t5": 6}, "w1": {"t1": 4, "t5": 2, "t6": 4}}
-    d3 : Dict = {"w2": {"t3": 3, "t4": 1, "t5": 6}, "w4": {"t2": 4, "t3": 2, "t7": 4}}
+    d1 : BType = {"w1": {"t1": 3, "t2": 4, "t3": 2}, "w2": {"t1": 3, "t2": 3, "t4": 3}}
+    d2 : BType = {"w4": {"t1": 3, "t2": 1, "t5": 6}, "w1": {"t1": 4, "t5": 2, "t6": 4}}
+    d3 : BType = {"w2": {"t3": 3, "t4": 1, "t5": 6}, "w4": {"t2": 4, "t3": 2, "t7": 4}}
     
     inv.append(d1)
     inv.append(d2)
