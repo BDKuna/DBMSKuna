@@ -83,6 +83,10 @@ class InvertedIndex:
 
         self.logger.info(f"Inicializando InvertedIndex con archivo {filename}.")
         self.file = InvertedFile(filename)
+
+    def insert_buckets(self, buckets : list[BType]):
+        for b in buckets:
+            self.file.append(b)
     
     def _sort_dict(self, d: Dict) -> Dict:
         return {
@@ -254,7 +258,7 @@ class InvertedIndex:
         group_size = 1
         while group_size < num_buckets:
             self.logger.info(f"--- Ronda #{round_num} con grupo de tamaño {group_size} ---")
-            temp_name = current_name[:-3] + f"_tmp.dat"
+            temp_name = current_name[:-4] + f"_tmp.dat"
             if os.path.exists(temp_name):
                 os.remove(temp_name)
 
@@ -372,8 +376,8 @@ def test_visual_merge():
     filename = "test_visual.dat"
     if os.path.exists(filename):
         os.remove(filename)
-
-    inv = InvertedFile(filename)
+    
+    open(filename, 'a').close()
 
     # 8 buckets, desordenados a propósito
     buckets = [
@@ -411,13 +415,10 @@ def test_visual_merge():
     ]
     
     
-    for i, b in enumerate(buckets):
-        print(f"[Append bucket {i}]")
-        print(len(pickle.dumps(b)))
-        inv.append(b)
-    
     index = InvertedIndex(filename)
+    index.insert_buckets(buckets)
     index.buildIndex()
-    print()
+    print(1)
 
-test_visual_merge()
+if __name__ == "__main__":
+    test_visual_merge()
