@@ -11,7 +11,7 @@ import math
 
 import logger
 
-BUCKET_LIMIT = 150
+BUCKET_LIMIT = 140
 
 BType = Dict[str, Dict[str, int]]
 
@@ -230,28 +230,32 @@ class InvertedIndex:
         return current, rest_b1, rest_b2
 
 
-    def _merge_bucket_range(self, l1: int, r1: int, l2: int, r2: int, output_file: InvertedFile) -> list:
+    def _merge_bucket_range(self, l1: int, r1: int, l2: int, r2: int, output_file: InvertedFile):
         """
         Fusiona todos los buckets en los rangos [l1, r1] y [l2, r2], generando buckets fusionados
         de tamaño BUCKET_LIMIT que se escriben secuencialmente en output_file.
+        La cantidad total de buckets generados se conserva igual que la suma original si es necesario,
+        rellenando con buckets vacíos al final.
         """
-        positions = []
         i, j = l1, l2
         b1 = self.file.read(i) if i <= r1 else None
         b2 = self.file.read(j) if j <= r2 else None
         current: BType = {}
 
+        generated = 0
+        original_total = (r1 - l1 + 1) + (r2 - l2 + 1)
+
         while b1 or b2:
             current, b1, b2 = self._merge_until_limit(current, b1, b2)
-            pos = output_file.append(current)
-            positions.append(pos)
+            output_file.append(current)
+            generated += 1
             current = {}
 
             if not b1 and i < r1:
                 i += 1
                 b1 = self.file.read(i)
             elif not b1 and i == r1:
-                i += 1  # to exit loop
+                i += 1
                 b1 = None
 
             if not b2 and j < r2:
@@ -261,11 +265,15 @@ class InvertedIndex:
                 j += 1
                 b2 = None
 
-        return positions
+        # Rellenar con buckets vacíos si generamos menos que el total original
+        while generated < original_total:
+            output_file.append({})
+            generated += 1
+
 
     def buildIndex(self):
         self.logger.info("Iniciando construcción del índice con SPIMI por rondas.")
-        num_buckets = os.path.getsize(self.filename) // BUCKET_LIMIT
+        num_buckets = self.file._read_header()
 
         # Ordenar cada bucket individualmente
         for i in range(num_buckets):
@@ -286,7 +294,6 @@ class InvertedIndex:
                 os.remove(temp_name)
 
             output_file = InvertedFile(temp_name)
-            new_positions = []
 
             for i in range(0, num_buckets, 2 * group_size):
                 l1 = i
@@ -297,19 +304,16 @@ class InvertedIndex:
                 if l2 > r2:
                     # No hay pareja, copiar directo
                     for k in range(l1, r1 + 1):
-                        pos = output_file.append(current_file.read(k))
-                        new_positions.append(pos)
+                        output_file.append(current_file.read(k))
                 else:
                     # Fusionar los dos rangos
-                    positions = self._merge_bucket_range(l1, r1, l2, r2, output_file)
-                    new_positions.extend(positions)
+                    self._merge_bucket_range(l1, r1, l2, r2, output_file)
 
             # Reemplazar archivos
             os.remove(current_name)
             os.rename(temp_name, current_name)
             current_file = InvertedFile(current_name)
             self.file = current_file
-            num_buckets = len(new_positions)
             group_size *= 2
             round_num += 1
 
