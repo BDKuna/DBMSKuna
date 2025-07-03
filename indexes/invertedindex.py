@@ -11,7 +11,7 @@ import math
 
 import logger
 
-BUCKET_LIMIT = 140
+BUCKET_LIMIT = 120
 
 BType = Dict[str, Dict[str, int]]
 
@@ -152,6 +152,7 @@ class InvertedIndex:
         rest = dict(rest) if rest else None
         return inserted, dict(merged), rest
 
+# funciona pero hay que indicar si obligadamente debe 
     def _merge_until_limit(
         self, 
         current: BType, 
@@ -177,11 +178,17 @@ class InvertedIndex:
                 current[term] = merged_partial
 
                 if rest_postings:
-                    rest_b1 = {k: b1[k] for k in keys1[i + 1:]} if i + 1 < len(keys1) else None
+                    # No terminamos b1, pero hay overflow
+                    rest_b1 = {term: rest_postings, **{k: b1[k] for k in keys1[i + 1:]}} if i + 1 < len(keys1) else {term: rest_postings}
                     rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
-                    return current, {term: rest_postings, **(rest_b1 or {})}, rest_b2
+                    return current, rest_b1, rest_b2
 
                 i += 1
+
+                # Si se terminó b1, devolver current y hacer que el llamador lea el siguiente
+                if i == len(keys1):
+                    rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
+                    return current, None, rest_b2
 
             # Caso: term solo en b2
             elif j < len(keys2) and (i >= len(keys1) or keys2[j] < keys1[i]):
@@ -198,10 +205,14 @@ class InvertedIndex:
 
                 if rest_postings:
                     rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
-                    rest_b2 = {k: b2[k] for k in keys2[j + 1:]} if j + 1 < len(keys2) else None
-                    return current, rest_b1, {term: rest_postings, **(rest_b2 or {})}
+                    rest_b2 = {term: rest_postings, **{k: b2[k] for k in keys2[j + 1:]}} if j + 1 < len(keys2) else {term: rest_postings}
+                    return current, rest_b1, rest_b2
 
                 j += 1
+
+                if j == len(keys2):
+                    rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
+                    return current, rest_b1, None
 
             # Caso: term está en ambos
             else:
@@ -218,17 +229,19 @@ class InvertedIndex:
 
                 if rest_postings:
                     rest_b1 = {k: b1[k] for k in keys1[i + 1:]} if i + 1 < len(keys1) else None
-                    rest_b2 = {k: b2[k] for k in keys2[j + 1:]} if j + 1 < len(keys2) else None
-                    return current, rest_b1, {term: rest_postings, **(rest_b2 or {})}
+                    rest_b2 = {term: rest_postings, **({k: b2[k] for k in keys2[j + 1:]} if j + 1 < len(keys2) else {})}
+                    return current, rest_b1, rest_b2
 
                 i += 1
                 j += 1
 
-        rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
-        rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
+                if i == len(keys1) or j == len(keys2):
+                    rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
+                    rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
+                    return current, rest_b1, rest_b2
 
-        return current, rest_b1, rest_b2
-
+        # Se procesaron todos los términos de ambos buckets
+        return current, None, None
 
     def _merge_bucket_range(self, l1: int, r1: int, l2: int, r2: int, output_file: InvertedFile):
         """
@@ -246,30 +259,28 @@ class InvertedIndex:
         original_total = (r1 - l1 + 1) + (r2 - l2 + 1)
 
         while b1 or b2:
-            current, b1, b2 = self._merge_until_limit(current, b1, b2)
+            current, new_b1, new_b2 = self._merge_until_limit(current, b1, b2)
             output_file.append(current)
             generated += 1
             current = {}
 
-            if not b1 and i < r1:
+            # Solo leer el siguiente bucket si el actual fue completamente consumido
+            if not new_b1 and i <= r1:
                 i += 1
-                b1 = self.file.read(i)
-            elif not b1 and i == r1:
-                i += 1
-                b1 = None
+                b1 = self.file.read(i) if i <= r1 else None
+            else:
+                b1 = new_b1
 
-            if not b2 and j < r2:
+            if not new_b2 and j <= r2:
                 j += 1
-                b2 = self.file.read(j)
-            elif not b2 and j == r2:
-                j += 1
-                b2 = None
+                b2 = self.file.read(j) if j <= r2 else None
+            else:
+                b2 = new_b2
 
         # Rellenar con buckets vacíos si generamos menos que el total original
         while generated < original_total:
             output_file.append({})
             generated += 1
-
 
     def buildIndex(self):
         self.logger.info("Iniciando construcción del índice con SPIMI por rondas.")
@@ -360,56 +371,90 @@ class InvertedIndex:
 
 
 
-def get_size(b):
-    print(len(pickle.dumps(b)))
+import random
 
-def test_visual_merge():
-    filename = "test_visual.dat"
+def generate_random_buckets(num_buckets=4, terms_count=10, docs_count=10, bucket_limit=BUCKET_LIMIT) -> List[Dict[str, Dict[str, int]]]:
+    term_pool = [f"w{i}" for i in range(terms_count)]
+    doc_pool = [f"d{i}" for i in range(docs_count)]
+
+    buckets = []
+    for _ in range(num_buckets):
+        bucket = {}
+        while True:
+            term = random.choice(term_pool)
+            postings = {}
+            for _ in range(random.randint(1, 5)):
+                doc = random.choice(doc_pool)
+                postings[doc] = random.randint(1, 3)
+            bucket[term] = postings
+            # Probar si cabe
+            if len(pickle.dumps(bucket)) > bucket_limit:
+                del bucket[term]  # quitar el último que causó overflow
+                break
+        buckets.append(bucket)
+    return buckets
+
+def test_hard_merge():
+    filename = "test_hard.dat"
     if os.path.exists(filename):
         os.remove(filename)
-    
     open(filename, 'a').close()
 
-    # 8 buckets, desordenados a propósito
-    buckets = [
-        {"zorro": {"doc1": 1, "doc2": 3, "doc5": 2},
-         "avion": {"doc2": 2, "doc4": 1, "doc5": 1},
-         "luz": {"doc1": 4, "doc3": 2, "doc4": 1}},
-
-        {"nube": {"doc3": 1, "doc6": 1, "doc7": 2},
-         "avion": {"doc1": 2, "doc4": 3, "doc7": 1},
-         "sol": {"doc1": 5, "doc2": 1, "doc6": 2}},
-
-        {"gato": {"doc1": 3, "doc4": 2, "doc8": 1},
-         "raton": {"doc3": 2, "doc7": 1, "doc8": 4},
-         "perro": {"doc2": 2, "doc3": 3, "doc5": 1}},
-
-        {"nube": {"doc2": 1, "doc3": 1, "doc6": 1},
-         "perro": {"doc3": 1, "doc6": 2, "doc8": 1},
-         "sol": {"doc2": 3, "doc5": 1, "doc7": 1}},
-
-        {"luz": {"doc1": 1, "doc2": 1, "doc3": 1},
-         "gato": {"doc4": 2, "doc5": 1, "doc6": 2},
-         "zorro": {"doc1": 2, "doc2": 1, "doc8": 3}},
-
-        {"sol": {"doc1": 1, "doc2": 2, "doc3": 1},
-         "luna": {"doc4": 3, "doc5": 1, "doc6": 1},
-         "avion": {"doc3": 1, "doc5": 2, "doc7": 1}},
-
-        {"raton": {"doc1": 2, "doc3": 1, "doc6": 1},
-         "gato": {"doc2": 3, "doc4": 1, "doc8": 2},
-         "luna": {"doc1": 1, "doc3": 1, "doc5": 1}},
-
-        {"perro": {"doc1": 2, "doc6": 1, "doc7": 3},
-         "sol": {"doc3": 2, "doc4": 2, "doc5": 1},
-         "avion": {"doc2": 3, "doc6": 1, "doc8": 1}},
-    ]
-    
-    
+    buckets = generate_random_buckets()
     index = InvertedIndex(filename)
     index.insert_buckets(buckets)
     index.buildIndex()
     index.file.show()
+    # Verificación del orden global de los términos
+    all_terms = []
+    num_buckets = index.file._read_header()
+
+    for i in range(num_buckets):
+        bucket = index.file.read(i)
+        all_terms.extend(bucket.keys())
+
+    if all_terms == sorted(all_terms):
+        print("✅ Todos los términos están ordenados globalmente.")
+    else:
+        print("❌ Los términos no están ordenados globalmente.")
+
+
+def test_merge_until_limit():
+    b1 = {'w1': {'d0': 3, 'd1': 2, 'd3': 3, 'd5': 1, 'd8': 3}, 'w2': {'d0': 1, 'd1': 3, 'd6': 2, 'd7': 2, 'd8': 1}, 'w3': {'d0': 2, 'd5': 2}}
+    b2 = {'w0': {'d2': 2, 'd3': 1, 'd4': 5}, 'w6': {'d1': 3, 'd6': 3, 'd8': 1}, 'w7': {'d0': 3, 'd2': 1, 'd3': 4, 'd4': 3, 'd6': 3}}
+    
+    index = InvertedIndex("test_hard.dat")
+    cur, b1, b2 = index._merge_until_limit({}, b1, b2)
+    
+    print(cur)
+    print(b1)
+    print(b2)
+    print()
+
+    cur, b1, b2 = index._merge_until_limit({}, b1, b2)
+    print(cur)
+    print(b1)
+    print(b2)
+
+def manual_test():
+    buckets = [
+        {'w1': {'d0': 2, 'd1': 1, 'd3': 3, 'd5': 1}, 'w2': {'d1': 3, 'd6': 1, 'd7': 2}, 'w8': {'d1': 1, 'd2': 1, 'd3': 3}},
+        {'w1': {'d0': 1, 'd1': 1, 'd8': 3}, 'w2': {'d0': 1, 'd6': 1, 'd8': 1}, 'w3': {'d0': 2, 'd5': 2, 'd7': 1, 'd8': 1}},
+        {'w0': {'d4': 2}, 'w7': {'d0': 3, 'd3': 1, 'd6': 3, 'd7': 3}, 'w9': {'d0': 1, 'd2': 1, 'd4': 2, 'd8': 3}},
+        {'w0': {'d2': 2, 'd3': 1, 'd4': 3}, 'w6': {'d1': 3, 'd6': 3, 'd8': 1}, 'w7': {'d2': 1, 'd3': 3, 'd4': 3, 'd7': 3, 'd8': 2}, 'w9': {'d8': 2}}
+    ]
+    filename = "test_manual.dat"
+    if os.path.exists(filename):
+        os.remove(filename)
+    open(filename, 'a').close()
+
+    index = InvertedIndex(filename)
+    index.insert_buckets(buckets)
+    index.buildIndex()
+    index.file.show()
+    
 
 if __name__ == "__main__":
-    test_visual_merge()
+    test_merge_until_limit()
+
+
