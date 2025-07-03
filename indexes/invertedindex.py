@@ -51,14 +51,14 @@ class InvertedFile:
         with open(self.filename, 'r+b') as f:
             f.seek(pos * BUCKET_LIMIT)
             f.write(data)
-        self.logger.info(f"Escrito bucket en posición {pos}.")
+        self.logger.debug(f"Escrito bucket en posición {pos}.")
 
     def append(self, d: BType) -> int:
         data = self._serialize(d)
         with open(self.filename, 'ab') as f:
             f.write(data)
         pos = os.path.getsize(self.filename) // BUCKET_LIMIT - 1
-        self.logger.info(f"Append en posición {pos}.")
+        self.logger.debug(f"Append en posición {pos}.")
         return pos
     
     def show(self):
@@ -416,10 +416,8 @@ def test_visual_merge():
         print(len(pickle.dumps(b)))
         inv.append(b)
     
-    inv.show()
     index = InvertedIndex(filename)
     index.buildIndex()
     print()
-    inv.show()
 
-# test_visual_merge
+test_visual_merge()
