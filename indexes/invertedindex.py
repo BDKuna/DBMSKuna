@@ -158,8 +158,8 @@ class InvertedIndex:
         b1: Optional[BType], 
         b2: Optional[BType]
     ) -> Tuple[BType, Optional[BType], Optional[BType]]:
-        keys1 = sorted(b1.keys()) if b1 else []
-        keys2 = sorted(b2.keys()) if b2 else []
+        keys1 = list(b1.keys()) if b1 else []
+        keys2 = list(b2.keys()) if b2 else []
         i = j = 0
 
         while i < len(keys1) or j < len(keys2):
@@ -362,42 +362,6 @@ class InvertedIndex:
 
 def get_size(b):
     print(len(pickle.dumps(b)))
-
-def test_merge():
-    b1 = {"zorro": {"doc1": 1, "doc2": 3, "doc5": 2},
-         "avion": {"doc2": 2, "doc4": 1, "doc5": 1},
-         "luz": {"doc1": 4, "doc3": 2, "doc4": 1}}
-
-    b2 = {"nube": {"doc3": 1, "doc6": 1, "doc7": 2},
-         "avion": {"doc1": 2, "doc4": 3, "doc7": 1},
-         "luz": {"doc8": 5, "doc2": 1, "doc6": 2}}
-        
-    get_size(b1)
-    print(b1)
-    get_size(b1)
-    print(b2)
-    index = InvertedIndex("test_visual.dat")
-    cur, d1, d2 = index._merge_until_limit({}, b1, b2)
-
-    print("first bucket:")
-    get_size(cur)
-    print(cur)
-    get_size(d1)
-    print(d1)
-    get_size(d2)
-    print(d2)
-
-    new, d1, d2 = index._merge_until_limit({}, d1, d2)
-
-    print("=================")
-    print("second bucket:")
-    get_size(new)
-    print(new)
-    get_size(d1)
-    print(d1)
-    get_size(d2)
-    print(d2)
-
 
 def test_visual_merge():
     filename = "test_visual.dat"
