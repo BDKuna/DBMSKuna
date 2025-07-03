@@ -1,6 +1,7 @@
 import os
 import sys
 import pickle
+import struct
 from typing import Dict, List, Optional, Iterator, Tuple, OrderedDict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -15,6 +16,8 @@ BUCKET_LIMIT = 150
 BType = Dict[str, Dict[str, int]]
 
 class InvertedFile:
+    HEADER_FORMAT = "i"
+    HEADER_SIZE = 4
     def __init__(self, filename: str):
         self.filename = filename
         self.logger = logger.CustomLogger(f"INVERTED-FILE-{filename}".upper())
@@ -22,7 +25,9 @@ class InvertedFile:
         self.logger.logger.setLevel(logging.INFO)
         if not os.path.exists(filename):
             with open(filename, 'wb') as f:
-                self.logger.info(f"Archivo {filename} creado.")
+                header = struct.pack(self.HEADER_FORMAT, 0)
+                f.write(header)
+            self.logger.info(f"Archivo {filename} creado con header estructurado.")
 
     def _serialize(self, d: BType) -> bytes:
         data = pickle.dumps(d)
@@ -37,9 +42,23 @@ class InvertedFile:
             self.logger.error(f"Error de deserialización: {e}")
             return {}
 
+    def _write_header(self, num_buckets: int):
+        packed = struct.pack(self.HEADER_FORMAT, num_buckets)
+        with open(self.filename, 'r+b') as f:
+            f.seek(0)
+            f.write(packed)
+
+    def _read_header(self) -> int:
+        with open(self.filename, 'rb') as f:
+            f.seek(0)
+            data = f.read(struct.calcsize(self.HEADER_FORMAT))
+            if len(data) < 4:
+                return 0
+            return struct.unpack(self.HEADER_FORMAT, data)[0]
+
     def read(self, pos: int) -> BType:
         with open(self.filename, 'rb') as f:
-            f.seek(pos * BUCKET_LIMIT)
+            f.seek(self.HEADER_SIZE + pos * BUCKET_LIMIT)
             data = f.read(BUCKET_LIMIT)
             if not data:
                 self.logger.warning(f"Intento de lectura en posición vacía: {pos}")
@@ -49,21 +68,24 @@ class InvertedFile:
     def write(self, pos: int, d: BType):
         data = self._serialize(d)
         with open(self.filename, 'r+b') as f:
-            f.seek(pos * BUCKET_LIMIT)
+            f.seek(self.HEADER_SIZE + pos * BUCKET_LIMIT)
             f.write(data)
         self.logger.debug(f"Escrito bucket en posición {pos}.")
 
     def append(self, d: BType) -> int:
+        num_buckets = self._read_header()
         data = self._serialize(d)
-        with open(self.filename, 'ab') as f:
+
+        with open(self.filename, 'r+b') as f:
+            f.seek(self.HEADER_SIZE + num_buckets * BUCKET_LIMIT)
             f.write(data)
-        pos = os.path.getsize(self.filename) // BUCKET_LIMIT - 1
-        self.logger.debug(f"Append en posición {pos}.")
-        return pos
+
+        self._write_header(num_buckets + 1)
+        self.logger.debug(f"Append en posición {num_buckets}.")
+        return num_buckets
     
     def show(self):
-        size = os.path.getsize(self.filename)
-        num_buckets = size // BUCKET_LIMIT
+        num_buckets = self._read_header()
         self.logger.info(f"Mostrando contenido de {self.filename} ({num_buckets} buckets):")
 
         for i in range(num_buckets):
@@ -257,6 +279,7 @@ class InvertedIndex:
 
         group_size = 1
         while group_size < num_buckets:
+            self.file.show()
             self.logger.info(f"--- Ronda #{round_num} con grupo de tamaño {group_size} ---")
             temp_name = current_name[:-4] + f"_tmp.dat"
             if os.path.exists(temp_name):
@@ -418,7 +441,7 @@ def test_visual_merge():
     index = InvertedIndex(filename)
     index.insert_buckets(buckets)
     index.buildIndex()
-    print(1)
+    index.file.show()
 
 if __name__ == "__main__":
     test_visual_merge()
