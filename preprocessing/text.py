@@ -7,6 +7,7 @@ import csv
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+
 from indexes.invertedindex import InvertedFile, BUCKET_LIMIT
 
 # --- Configuración fija ---
@@ -17,7 +18,8 @@ INDEX_PATH   = 'table_column_texts.dat'
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
-# nltk.download('stopwords')  # descomenta si es la primera vez
+# nltk.download('stopwords') 
+# CORRE ESTO LA PRIMERA VEZ
 
 _CLEAN_RE   = re.compile(r'[^a-z0-9]')           # deja sólo letras y dígitos
 _STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
@@ -100,6 +102,6 @@ def saveDatasetOnInvertedFile():
         }
         inv.append(ordered)
 
-if __name__ == "__main__":
-    saveDatasetOnInvertedFile()
-    print("Proceso completado. Buckets guardados en", INDEX_PATH)
+#if __name__ == "__main__":
+#    saveDatasetOnInvertedFile()
+#    print("Proceso completado. Buckets guardados en", INDEX_PATH)

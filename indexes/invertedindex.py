@@ -1,7 +1,7 @@
 import os
 import sys
 import pickle
-from typing import Dict
+from typing import Dict, List, Optional, Iterator, Tuple, OrderedDict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -10,7 +10,7 @@ import math
 
 import logger
 
-BUCKET_LIMIT = 1024
+BUCKET_LIMIT = 150
 
 BType = Dict[str, Dict[str, int]]
 
@@ -18,7 +18,8 @@ class InvertedFile:
     def __init__(self, filename: str):
         self.filename = filename
         self.logger = logger.CustomLogger(f"INVERTED-FILE-{filename}".upper())
-
+        import logging
+        self.logger.logger.setLevel(logging.INFO)
         if not os.path.exists(filename):
             with open(filename, 'wb') as f:
                 self.logger.info(f"Archivo {filename} creado.")
@@ -59,6 +60,17 @@ class InvertedFile:
         pos = os.path.getsize(self.filename) // BUCKET_LIMIT - 1
         self.logger.info(f"Append en posición {pos}.")
         return pos
+    
+    def show(self):
+        size = os.path.getsize(self.filename)
+        num_buckets = size // BUCKET_LIMIT
+        self.logger.info(f"Mostrando contenido de {self.filename} ({num_buckets} buckets):")
+
+        for i in range(num_buckets):
+            bucket = self.read(i)
+            print(f"Bucket {i}: {bucket}")
+            print(len(pickle.dumps(bucket)))
+
 
 class InvertedIndex:
     def __init__(self, filename: str):
@@ -71,104 +83,157 @@ class InvertedIndex:
 
         self.logger.info(f"Inicializando InvertedIndex con archivo {filename}.")
         self.file = InvertedFile(filename)
-
+    
     def _sort_dict(self, d: Dict) -> Dict:
         return {
             word: dict(sorted(postings.items()))
             for word, postings in sorted(d.items())
         }
-
-    def _generate_merged_buckets(self, d1: Dict, d2: Dict):
+        
+    def _merge_postings_limited(
+        self, 
+        current: BType,
+        term: str, 
+        p1: Dict[str, int], 
+        p2: Dict[str, int]
+    ) -> Tuple[bool, Dict[str, int], Optional[Dict[str, int]]]:
         """
-        Generador que devuelve múltiples buckets resultado de merge entre d1 y d2,
-        donde cada bucket serializado no supera BUCKET_LIMIT.
+        Intenta insertar postings fusionados de p1 y p2 para el término `term` dentro de `current`.
+        Si no cabe todo, devuelve el fragmento que falta para ser insertado en otro bucket.
+        
+        Return:
+            - inserted: bool → si algo se insertó
+            - merged_partial: los postings que se insertaron
+            - rest: el resto (None si todo fue insertado)
         """
-        from collections import OrderedDict
 
+        all_docs = sorted(set(p1) | set(p2))
         merged = OrderedDict()
-        keys1 = sorted(d1.keys())
-        keys2 = sorted(d2.keys())
-        i, j = 0, 0
+        rest = OrderedDict()
 
-        def flush_bucket(bucket):
-            yield dict(bucket)
+        for doc in all_docs:
+            freq = p1.get(doc, 0) + p2.get(doc, 0)
+            merged[doc] = freq
+            temp = current.copy()
+            temp[term] = dict(merged)
+            if len(pickle.dumps(temp)) > BUCKET_LIMIT:
+                # Saca el último doc y lo pasa a rest
+                last_doc = list(merged.keys())[-1]
+                rest[last_doc] = merged.pop(last_doc)
+                break
 
-        bucket = OrderedDict()
+        inserted = bool(merged)
+        rest = dict(rest) if rest else None
+        return inserted, dict(merged), rest
 
-        while i < len(keys1) and j < len(keys2):
-            k1, k2 = keys1[i], keys2[j]
+    def _merge_until_limit(
+        self, 
+        current: BType, 
+        b1: Optional[BType], 
+        b2: Optional[BType]
+    ) -> Tuple[BType, Optional[BType], Optional[BType]]:
+        keys1 = sorted(b1.keys()) if b1 else []
+        keys2 = sorted(b2.keys()) if b2 else []
+        i = j = 0
 
-            if k1 < k2:
-                word = k1
-                postings = dict(sorted(d1[k1].items()))
+        while i < len(keys1) or j < len(keys2):
+            # Caso: term solo en b1
+            if i < len(keys1) and (j >= len(keys2) or keys1[i] < keys2[j]):
+                term = keys1[i]
+                p1 = b1[term]
+                p2 = {}
+
+                inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
+
+                if not inserted:
+                    break
+
+                current[term] = merged_partial
+
+                if rest_postings:
+                    rest_b1 = {k: b1[k] for k in keys1[i + 1:]} if i + 1 < len(keys1) else None
+                    rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
+                    return current, {term: rest_postings, **(rest_b1 or {})}, rest_b2
+
                 i += 1
-            elif k1 > k2:
-                word = k2
-                postings = dict(sorted(d2[k2].items()))
+
+            # Caso: term solo en b2
+            elif j < len(keys2) and (i >= len(keys1) or keys2[j] < keys1[i]):
+                term = keys2[j]
+                p1 = {}
+                p2 = b2[term]
+
+                inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
+
+                if not inserted:
+                    break
+
+                current[term] = merged_partial
+
+                if rest_postings:
+                    rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
+                    rest_b2 = {k: b2[k] for k in keys2[j + 1:]} if j + 1 < len(keys2) else None
+                    return current, rest_b1, {term: rest_postings, **(rest_b2 or {})}
+
                 j += 1
+
+            # Caso: term está en ambos
             else:
-                word = k1
-                postings1 = d1[k1]
-                postings2 = d2[k2]
-                merged_postings = {}
-                for doc in sorted(set(postings1) | set(postings2)):
-                    merged_postings[doc] = postings1.get(doc, 0) + postings2.get(doc, 0)
-                postings = merged_postings
+                term = keys1[i]
+                p1 = b1[term]
+                p2 = b2[term]
+
+                inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
+
+                if not inserted:
+                    break
+
+                current[term] = merged_partial
+
+                if rest_postings:
+                    rest_b1 = {k: b1[k] for k in keys1[i + 1:]} if i + 1 < len(keys1) else None
+                    rest_b2 = {k: b2[k] for k in keys2[j + 1:]} if j + 1 < len(keys2) else None
+                    return current, rest_b1, {term: rest_postings, **(rest_b2 or {})}
+
                 i += 1
                 j += 1
 
-            bucket[word] = postings
+        rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
+        rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
 
-            # Si se pasa el límite al serializar, rendimos y comenzamos otro
-            if len(pickle.dumps(bucket)) > BUCKET_LIMIT:
-                bucket.pop(word)
-                yield from flush_bucket(bucket)
-                bucket = OrderedDict()
-                bucket[word] = postings
+        return current, rest_b1, rest_b2
 
-        # Resto de claves
-        for k in keys1[i:]:
-            bucket[k] = dict(sorted(d1[k].items()))
-            if len(pickle.dumps(bucket)) > BUCKET_LIMIT:
-                bucket.pop(k)
-                yield from flush_bucket(bucket)
-                bucket = OrderedDict()
-                bucket[k] = dict(sorted(d1[k].items()))
-
-        for k in keys2[j:]:
-            bucket[k] = dict(sorted(d2[k].items()))
-            if len(pickle.dumps(bucket)) > BUCKET_LIMIT:
-                bucket.pop(k)
-                yield from flush_bucket(bucket)
-                bucket = OrderedDict()
-                bucket[k] = dict(sorted(d2[k].items()))
-
-        if bucket:
-            yield from flush_bucket(bucket)
 
     def _merge_bucket_range(self, l1: int, r1: int, l2: int, r2: int, output_file: InvertedFile) -> list:
         """
-        Fusiona los buckets desde [l1, r1] con [l2, r2] y los escribe en output_file.
-        Devuelve las nuevas posiciones en output_file.
+        Fusiona todos los buckets en los rangos [l1, r1] y [l2, r2], generando buckets fusionados
+        de tamaño BUCKET_LIMIT que se escriben secuencialmente en output_file.
         """
         positions = []
         i, j = l1, l2
-        while i <= r1 and j <= r2:
-            d1 = self.file.read(i)
-            d2 = self.file.read(j)
-            for bucket in self._generate_merged_buckets(d1, d2):
-                pos = output_file.append(bucket)
-                positions.append(pos)
-            i += 1
-            j += 1
+        b1 = self.file.read(i) if i <= r1 else None
+        b2 = self.file.read(j) if j <= r2 else None
+        current: BType = {}
 
-        # Copiar los buckets restantes sin cambios
-        for k in range(i, r1 + 1):
-            pos = output_file.append(self.file.read(k))
+        while b1 or b2:
+            current, b1, b2 = self._merge_until_limit(current, b1, b2)
+            pos = output_file.append(current)
             positions.append(pos)
-        for k in range(j, r2 + 1):
-            pos = output_file.append(self.file.read(k))
-            positions.append(pos)
+            current = {}
+
+            if not b1 and i < r1:
+                i += 1
+                b1 = self.file.read(i)
+            elif not b1 and i == r1:
+                i += 1  # to exit loop
+                b1 = None
+
+            if not b2 and j < r2:
+                j += 1
+                b2 = self.file.read(j)
+            elif not b2 and j == r2:
+                j += 1
+                b2 = None
 
         return positions
 
@@ -189,7 +254,7 @@ class InvertedIndex:
         group_size = 1
         while group_size < num_buckets:
             self.logger.info(f"--- Ronda #{round_num} con grupo de tamaño {group_size} ---")
-            temp_name = current_name + f".tmp"
+            temp_name = current_name[:-3] + f"_tmp.dat"
             if os.path.exists(temp_name):
                 os.remove(temp_name)
 
@@ -223,7 +288,7 @@ class InvertedIndex:
 
         self.logger.info("Índice invertido completamente construido y ordenado.")
 
-    def getByWord(self,word)->(dict[int,int],int):
+    def getByWord(self,word)->Tuple[dict[int,int],int]:
         # se necesita devolver los documentos con su tf, y el idf, en el q se encuntra la palabra
         index = {1:1,2:2,3:1,4:4,5:3}
         total_docs = 100 #guardar en header
@@ -262,6 +327,4 @@ class InvertedIndex:
         result = sorted(score.items(), key=lambda tup: tup[1], reverse=True)
         return result
 
-if __name__ == "__main__":
-    index = InvertedIndex()
-    print(index.search("hola que tal que que pasa pasa pasa pasa"))
+
