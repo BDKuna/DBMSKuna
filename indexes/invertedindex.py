@@ -328,3 +328,98 @@ class InvertedIndex:
         return result
 
 
+
+def get_size(b):
+    print(len(pickle.dumps(b)))
+
+def test_merge():
+    b1 = {"zorro": {"doc1": 1, "doc2": 3, "doc5": 2},
+         "avion": {"doc2": 2, "doc4": 1, "doc5": 1},
+         "luz": {"doc1": 4, "doc3": 2, "doc4": 1}}
+
+    b2 = {"nube": {"doc3": 1, "doc6": 1, "doc7": 2},
+         "avion": {"doc1": 2, "doc4": 3, "doc7": 1},
+         "luz": {"doc8": 5, "doc2": 1, "doc6": 2}}
+        
+    get_size(b1)
+    print(b1)
+    get_size(b1)
+    print(b2)
+    index = InvertedIndex("test_visual.dat")
+    cur, d1, d2 = index._merge_until_limit({}, b1, b2)
+
+    print("first bucket:")
+    get_size(cur)
+    print(cur)
+    get_size(d1)
+    print(d1)
+    get_size(d2)
+    print(d2)
+
+    new, d1, d2 = index._merge_until_limit({}, d1, d2)
+
+    print("=================")
+    print("second bucket:")
+    get_size(new)
+    print(new)
+    get_size(d1)
+    print(d1)
+    get_size(d2)
+    print(d2)
+
+
+def test_visual_merge():
+    filename = "test_visual.dat"
+    if os.path.exists(filename):
+        os.remove(filename)
+
+    inv = InvertedFile(filename)
+
+    # 8 buckets, desordenados a propósito
+    buckets = [
+        {"zorro": {"doc1": 1, "doc2": 3, "doc5": 2},
+         "avion": {"doc2": 2, "doc4": 1, "doc5": 1},
+         "luz": {"doc1": 4, "doc3": 2, "doc4": 1}},
+
+        {"nube": {"doc3": 1, "doc6": 1, "doc7": 2},
+         "avion": {"doc1": 2, "doc4": 3, "doc7": 1},
+         "sol": {"doc1": 5, "doc2": 1, "doc6": 2}},
+
+        {"gato": {"doc1": 3, "doc4": 2, "doc8": 1},
+         "raton": {"doc3": 2, "doc7": 1, "doc8": 4},
+         "perro": {"doc2": 2, "doc3": 3, "doc5": 1}},
+
+        {"nube": {"doc2": 1, "doc3": 1, "doc6": 1},
+         "perro": {"doc3": 1, "doc6": 2, "doc8": 1},
+         "sol": {"doc2": 3, "doc5": 1, "doc7": 1}},
+
+        {"luz": {"doc1": 1, "doc2": 1, "doc3": 1},
+         "gato": {"doc4": 2, "doc5": 1, "doc6": 2},
+         "zorro": {"doc1": 2, "doc2": 1, "doc8": 3}},
+
+        {"sol": {"doc1": 1, "doc2": 2, "doc3": 1},
+         "luna": {"doc4": 3, "doc5": 1, "doc6": 1},
+         "avion": {"doc3": 1, "doc5": 2, "doc7": 1}},
+
+        {"raton": {"doc1": 2, "doc3": 1, "doc6": 1},
+         "gato": {"doc2": 3, "doc4": 1, "doc8": 2},
+         "luna": {"doc1": 1, "doc3": 1, "doc5": 1}},
+
+        {"perro": {"doc1": 2, "doc6": 1, "doc7": 3},
+         "sol": {"doc3": 2, "doc4": 2, "doc5": 1},
+         "avion": {"doc2": 3, "doc6": 1, "doc8": 1}},
+    ]
+    
+    
+    for i, b in enumerate(buckets):
+        print(f"[Append bucket {i}]")
+        print(len(pickle.dumps(b)))
+        inv.append(b)
+    
+    inv.show()
+    index = InvertedIndex(filename)
+    index.buildIndex()
+    print()
+    inv.show()
+
+# test_visual_merge
