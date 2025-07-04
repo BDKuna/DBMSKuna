@@ -132,7 +132,10 @@ class InvertedIndex:
             - merged_partial: los postings que se insertaron
             - rest: el resto (None si todo fue insertado)
         """
-
+        print("==========")
+        print(current)
+        print(p1)
+        print(p2)
         all_docs = sorted(set(p1) | set(p2))
         merged = OrderedDict()
         rest = OrderedDict()
@@ -150,6 +153,10 @@ class InvertedIndex:
 
         inserted = bool(merged)
         rest = dict(rest) if rest else None
+        print(inserted) 
+        print(dict(merged))
+        print(rest)
+        print("-----------")
         return inserted, dict(merged), rest
 
     def _merge_until_limit(
@@ -165,12 +172,17 @@ class InvertedIndex:
         i = j = 0
 
         while i < len(keys1) or j < len(keys2):
+            print(current)
+            print(b1)
+            print(b2)
+            print("000000000000")
             # Forzar seguir si uno terminó y no esperamos más bloques
             force_b1_done = i >= len(keys1) and end_b1
             force_b2_done = j >= len(keys2) and end_b2
 
             # Caso: term solo en b1 o ya se acabó b2 y no habrá más
             if (i < len(keys1) and (j >= len(keys2) or keys1[i] < keys2[j])) or force_b2_done:
+                print("AAA")
                 if i >= len(keys1): break
                 term = keys1[i]
                 p1 = b1[term]
@@ -194,6 +206,7 @@ class InvertedIndex:
 
             # Caso: term solo en b2 o ya se acabó b1 y no habrá más
             elif (j < len(keys2) and (i >= len(keys1) or keys2[j] < keys1[i])) or force_b1_done:
+                print("BBB")
                 if j >= len(keys2): break
                 term = keys2[j]
                 p1 = {}
@@ -217,6 +230,7 @@ class InvertedIndex:
 
             # Caso: término en ambos
             else:
+                print("CCC")
                 if i >= len(keys1) or j >= len(keys2): break
                 term = keys1[i]
                 p1 = b1[term]
@@ -412,8 +426,12 @@ def test_hard_merge():
 
 
 def test_merge_until_limit():
-    b1 = {'w1': {'d0': 3, 'd1': 2, 'd3': 3, 'd5': 1, 'd8': 3}, 'w2': {'d0': 1, 'd1': 3, 'd6': 2, 'd7': 2, 'd8': 1}, 'w3': {'d0': 2, 'd5': 2}}
-    b2 = {'w0': {'d2': 2, 'd3': 1, 'd4': 5}, 'w6': {'d1': 3, 'd6': 3, 'd8': 1}, 'w7': {'d0': 3, 'd2': 1, 'd3': 4, 'd4': 3, 'd6': 3}}
+    b1 = {'w1': {'d0': 2, 'd1': 1, 'd3': 3, 'd5': 1}, 'w2': {'d1': 3, 'd6': 1, 'd7': 2}, 'w8': {'d1': 1, 'd2': 1, 'd3': 3}}
+    b2 = {'w1': {'d0': 1, 'd1': 1, 'd8': 3}, 'w2': {'d0': 1, 'd6': 1, 'd8': 1}, 'w3': {'d0': 2, 'd5': 2, 'd7': 1, 'd8': 1}}
+    
+    print(b1)
+    print(b2)
+    print()
     
     index = InvertedIndex("test_hard.dat")
     cur, b1, b2, x1, x2 = index._merge_until_limit({}, b1, b2, False, False)
@@ -444,9 +462,26 @@ def manual_test():
     index.insert_buckets(buckets)
     index.buildIndex()
     index.file.show()
+
+def manual_test_2():
+    buckets = [
+        {'w0': {'d8': 1}, 'w2': {'d1': 2, 'd2': 3}, 'w9': {'d4': 2, 'd7': 3, 'd8': 3, 'd9': 1}},
+        {'w1': {'d2': 3, 'd4': 3, 'd9': 1}, 'w6': {'d2': 1}, 'w7': {'d1': 3, 'd5': 1, 'd7': 2}},
+        {'w3': {'d0': 3, 'd2': 1, 'd3': 3, 'd9': 3}, 'w5': {'d4': 2}},
+        {'w0': {'d1': 2, 'd2': 3, 'd6': 1, 'd7': 2}, 'w6': {'d2': 2, 'd4': 3, 'd5': 3, 'd7': 3}, 'w9': {'d1': 3}},
+    ]
+    filename = "test_manual.dat"
+    if os.path.exists(filename):
+        os.remove(filename)
+    open(filename, 'a').close()
+
+    index = InvertedIndex(filename)
+    index.insert_buckets(buckets)
+    index.buildIndex()
+    index.file.show()
     
 
 if __name__ == "__main__":
-    test_hard_merge()
+    test_merge_until_limit()
 
 
