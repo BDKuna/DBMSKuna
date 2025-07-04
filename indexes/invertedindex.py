@@ -11,7 +11,7 @@ import math
 
 import logger
 
-BUCKET_LIMIT = 200
+BUCKET_LIMIT = 1024
 
 BType = Dict[str, Dict[str, int]]
 
@@ -254,7 +254,6 @@ class InvertedIndex:
         current: BType = {}
 
         generated = 0
-        original_total = (r1 - l1 + 1) + (r2 - l2 + 1)
 
         while b1 or b2:
             end_b1 = i == r1
@@ -273,10 +272,6 @@ class InvertedIndex:
                 j += 1
                 b2 = self.file.read(j)
 
-        while generated < original_total:
-            output_file.append({})
-            generated += 1
-
 
     def buildIndex(self):
         self.logger.info("Iniciando construcción del índice con SPIMI por rondas.")
@@ -292,39 +287,45 @@ class InvertedIndex:
         current_name = self.filename
         round_num = 1
 
-        group_size = 1
-        while group_size < num_buckets:
+        # Inicializar rangos activos con cada bucket por separado
+        active_ranges = [(i, i) for i in range(num_buckets)]
+
+        while len(active_ranges) > 1:
             self.file.show()
-            self.logger.info(f"--- Ronda #{round_num} con grupo de tamaño {group_size} ---")
+            self.logger.info(f"--- Ronda #{round_num} ---")
             temp_name = current_name[:-4] + f"_tmp.dat"
             if os.path.exists(temp_name):
                 os.remove(temp_name)
 
             output_file = InvertedFile(temp_name)
-
-            for i in range(0, num_buckets, 2 * group_size):
-                l1 = i
-                r1 = min(i + group_size - 1, num_buckets - 1)
-                l2 = i + group_size
-                r2 = min(i + 2 * group_size - 1, num_buckets - 1)
-
-                if l2 > r2:
+            new_ranges = []
+            for idx in range(0, len(active_ranges), 2):
+                if idx + 1 == len(active_ranges):
                     # No hay pareja, copiar directo
-                    for k in range(l1, r1 + 1):
-                        output_file.append(current_file.read(k))
+                    l, r = active_ranges[idx]
+                    for i in range(l, r + 1):
+                        output_file.append(current_file.read(i))
+                    # Añadir este rango tal como está al nuevo conjunto
+                    new_ranges.append((output_file._read_header() - (r - l + 1), output_file._read_header() - 1))
                 else:
-                    # Fusionar los dos rangos
+                    # Mergear los dos rangos
+                    l1, r1 = active_ranges[idx]
+                    l2, r2 = active_ranges[idx + 1]
+                    start = output_file._read_header()
                     self._merge_bucket_range(l1, r1, l2, r2, output_file)
+                    end = output_file._read_header() - 1
+                    new_ranges.append((start, end))
 
-            # Reemplazar archivos
+            # Actualizar archivo y rangos
             os.remove(current_name)
             os.rename(temp_name, current_name)
             current_file = InvertedFile(current_name)
             self.file = current_file
-            group_size *= 2
+            active_ranges = new_ranges
             round_num += 1
 
         self.logger.info("Índice invertido completamente construido y ordenado.")
+
 
     def getByWord(self,word)->Tuple[dict[int,int],int]:
         # se necesita devolver los documentos con su tf, y el idf, en el q se encuntra la palabra
@@ -369,7 +370,7 @@ class InvertedIndex:
 
 import random
 
-def generate_random_buckets(num_buckets=4, terms_count=100, docs_count=30, bucket_limit=BUCKET_LIMIT) -> List[Dict[str, Dict[str, int]]]:
+def generate_random_buckets(num_buckets=1024, terms_count=1000, docs_count=50, bucket_limit=BUCKET_LIMIT) -> List[Dict[str, Dict[str, int]]]:
     term_pool = [f"w{i}" for i in range(terms_count)]
     doc_pool = [f"d{i}" for i in range(docs_count)]
 
@@ -470,6 +471,22 @@ def manual_test_2():
     index.buildIndex()
     index.file.show()
     
+def manual_test_3():
+    buckets = [
+        {'w26': {'d1': 2, 'd28': 1, 'd8': 2}, 'w37': {'d17': 2, 'd23': 1, 'd27': 2}, 'w93': {'d12': 2, 'd19': 3, 'd4': 3}, 'w96': {'d11': 1, 'd13': 3, 'd24': 1, 'd25': 3, 'd5': 3}, 'w98': {'d29': 3, 'd6': 1, 'd8': 3}},
+        {'w31': {'d1': 2, 'd20': 1}, 'w4': {'d13': 2, 'd18': 2}, 'w42': {'d16': 3, 'd21': 2}, 'w67': {'d15': 3, 'd29': 1}, 'w77': {'d24': 3, 'd27': 3, 'd9': 2}, 'w79': {'d14': 2, 'd15': 3, 'd3': 3}, 'w99': {'d12': 2}},
+        {'w12': {'d17': 2, 'd2': 1}, 'w15': {'d16': 3, 'd25': 2}, 'w21': {'d1': 3}, 'w26': {'d18': 2}, 'w67': {'d12': 3, 'd14': 3, 'd4': 3}, 'w80': {'d1': 2, 'd16': 2, 'd18': 1}, 'w81': {'d5': 2, 'd7': 2, 'd8': 2}},
+        {'w16': {'d0': 3, 'd25': 2, 'd26': 1, 'd5': 1}, 'w49': {'d13': 2, 'd15': 2, 'd23': 2, 'd29': 2}, 'w83': {'d11': 2, 'd18': 2}, 'w86': {'d13': 3, 'd5': 3}, 'w94': {'d15': 1, 'd4': 3, 'd7': 3}, 'w96': {'d7': 2}},
+    ]
+    filename = "test_manual.dat"
+    if os.path.exists(filename):
+        os.remove(filename)
+    open(filename, 'a').close()
+
+    index = InvertedIndex(filename)
+    index.insert_buckets(buckets)
+    index.buildIndex()
+    index.file.show()
 
 if __name__ == "__main__":
     test_hard_merge()
