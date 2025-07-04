@@ -132,10 +132,6 @@ class InvertedIndex:
             - merged_partial: los postings que se insertaron
             - rest: el resto (None si todo fue insertado)
         """
-        #print("==========")
-        #print(current)
-        #print(p1)
-        #print(p2)
         all_docs = sorted(set(p1) | set(p2))
         merged = OrderedDict()
         rest = OrderedDict()
@@ -162,10 +158,6 @@ class InvertedIndex:
 
         inserted = bool(merged)
         rest = dict(rest) if rest else None
-        #print(inserted) 
-        #print(dict(merged))
-        #print(rest)
-        #print("-----------")
         return inserted, dict(merged), rest
 
     def _merge_until_limit(
@@ -365,58 +357,5 @@ class InvertedIndex:
         # Ordenar los resultados por similitud
         result = sorted(score.items(), key=lambda tup: tup[1], reverse=True)
         return result
-
-
-
-import random
-
-def generate_random_buckets(num_buckets=1024, terms_count=1000, docs_count=50, bucket_limit=BUCKET_LIMIT) -> List[Dict[str, Dict[str, int]]]:
-    term_pool = [f"w{i}" for i in range(terms_count)]
-    doc_pool = [f"d{i}" for i in range(docs_count)]
-
-    buckets = []
-    for _ in range(num_buckets):
-        bucket = {}
-        while True:
-            term = random.choice(term_pool)
-            postings = {}
-            for _ in range(random.randint(1, 5)):
-                doc = random.choice(doc_pool)
-                postings[doc] = random.randint(1, 3)
-            bucket[term] = postings
-            # Probar si cabe
-            if len(pickle.dumps(bucket)) > bucket_limit:
-                del bucket[term]  # quitar el último que causó overflow
-                break
-        buckets.append(bucket)
-    return buckets
-
-def test_hard_merge():
-    filename = "test_hard.dat"
-    if os.path.exists(filename):
-        os.remove(filename)
-    open(filename, 'a').close()
-
-    buckets = generate_random_buckets()
-    index = InvertedIndex(filename)
-    index.insert_buckets(buckets)
-    index.buildIndex()
-    index.file.show()
-    # Verificación del orden global de los términos
-    all_terms = []
-    num_buckets = index.file._read_header()
-
-    for i in range(num_buckets):
-        bucket = index.file.read(i)
-        all_terms.extend(bucket.keys())
-
-    if all_terms == sorted(all_terms):
-        print("✅ Todos los términos están ordenados globalmente.")
-    else:
-        print("❌ Los términos no están ordenados globalmente.")
-
-
-if __name__ == "__main__":
-    test_hard_merge()
 
 
