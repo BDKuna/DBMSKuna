@@ -11,7 +11,7 @@ import math
 
 import logger
 
-BUCKET_LIMIT = 120
+BUCKET_LIMIT = 100
 
 BType = Dict[str, Dict[str, int]]
 
@@ -152,104 +152,98 @@ class InvertedIndex:
         rest = dict(rest) if rest else None
         return inserted, dict(merged), rest
 
-# funciona pero hay que indicar si obligadamente debe 
     def _merge_until_limit(
         self, 
         current: BType, 
         b1: Optional[BType], 
-        b2: Optional[BType]
-    ) -> Tuple[BType, Optional[BType], Optional[BType]]:
+        b2: Optional[BType],
+        end_b1: bool,
+        end_b2: bool
+    ) -> Tuple[BType, Optional[BType], Optional[BType], bool, bool]:
         keys1 = list(b1.keys()) if b1 else []
         keys2 = list(b2.keys()) if b2 else []
         i = j = 0
 
         while i < len(keys1) or j < len(keys2):
-            # Caso: term solo en b1
-            if i < len(keys1) and (j >= len(keys2) or keys1[i] < keys2[j]):
+            # Forzar seguir si uno terminó y no esperamos más bloques
+            force_b1_done = i >= len(keys1) and end_b1
+            force_b2_done = j >= len(keys2) and end_b2
+
+            # Caso: term solo en b1 o ya se acabó b2 y no habrá más
+            if (i < len(keys1) and (j >= len(keys2) or keys1[i] < keys2[j])) or force_b2_done:
+                if i >= len(keys1): break
                 term = keys1[i]
                 p1 = b1[term]
                 p2 = {}
 
                 inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
-
                 if not inserted:
-                    break
+                    return current, b1, b2, False, False
 
                 current[term] = merged_partial
 
                 if rest_postings:
-                    # No terminamos b1, pero hay overflow
                     rest_b1 = {term: rest_postings, **{k: b1[k] for k in keys1[i + 1:]}} if i + 1 < len(keys1) else {term: rest_postings}
                     rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
-                    return current, rest_b1, rest_b2
+                    return current, rest_b1, rest_b2, False, False
 
                 i += 1
-
-                # Si se terminó b1, devolver current y hacer que el llamador lea el siguiente
-                if i == len(keys1):
+                if i == len(keys1) and not end_b1:
                     rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
-                    return current, None, rest_b2
+                    return current, None, rest_b2, True, False
 
-            # Caso: term solo en b2
-            elif j < len(keys2) and (i >= len(keys1) or keys2[j] < keys1[i]):
+            # Caso: term solo en b2 o ya se acabó b1 y no habrá más
+            elif (j < len(keys2) and (i >= len(keys1) or keys2[j] < keys1[i])) or force_b1_done:
+                if j >= len(keys2): break
                 term = keys2[j]
                 p1 = {}
                 p2 = b2[term]
 
                 inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
-
                 if not inserted:
-                    break
+                    return current, b1, b2, False, False
 
                 current[term] = merged_partial
 
                 if rest_postings:
                     rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
                     rest_b2 = {term: rest_postings, **{k: b2[k] for k in keys2[j + 1:]}} if j + 1 < len(keys2) else {term: rest_postings}
-                    return current, rest_b1, rest_b2
+                    return current, rest_b1, rest_b2, False, False
 
                 j += 1
-
-                if j == len(keys2):
+                if j == len(keys2) and not end_b2:
                     rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
-                    return current, rest_b1, None
+                    return current, rest_b1, None, False, True
 
-            # Caso: term está en ambos
+            # Caso: término en ambos
             else:
+                if i >= len(keys1) or j >= len(keys2): break
                 term = keys1[i]
                 p1 = b1[term]
                 p2 = b2[term]
 
                 inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
-
                 if not inserted:
-                    break
+                    return current, b1, b2, False, False
 
                 current[term] = merged_partial
 
                 if rest_postings:
                     rest_b1 = {k: b1[k] for k in keys1[i + 1:]} if i + 1 < len(keys1) else None
                     rest_b2 = {term: rest_postings, **({k: b2[k] for k in keys2[j + 1:]} if j + 1 < len(keys2) else {})}
-                    return current, rest_b1, rest_b2
+                    return current, rest_b1, rest_b2, False, False
 
                 i += 1
                 j += 1
 
-                if i == len(keys1) or j == len(keys2):
+                if (i == len(keys1) and not end_b1) or (j == len(keys2) and not end_b2):
                     rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
                     rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
-                    return current, rest_b1, rest_b2
+                    return current, rest_b1, rest_b2, i == len(keys1) and not end_b1, j == len(keys2) and not end_b2
 
-        # Se procesaron todos los términos de ambos buckets
-        return current, None, None
+        return current, None, None, False, False
 
     def _merge_bucket_range(self, l1: int, r1: int, l2: int, r2: int, output_file: InvertedFile):
-        """
-        Fusiona todos los buckets en los rangos [l1, r1] y [l2, r2], generando buckets fusionados
-        de tamaño BUCKET_LIMIT que se escriben secuencialmente en output_file.
-        La cantidad total de buckets generados se conserva igual que la suma original si es necesario,
-        rellenando con buckets vacíos al final.
-        """
         i, j = l1, l2
         b1 = self.file.read(i) if i <= r1 else None
         b2 = self.file.read(j) if j <= r2 else None
@@ -259,28 +253,26 @@ class InvertedIndex:
         original_total = (r1 - l1 + 1) + (r2 - l2 + 1)
 
         while b1 or b2:
-            current, new_b1, new_b2 = self._merge_until_limit(current, b1, b2)
+            end_b1 = i == r1
+            end_b2 = j == r2
+
+            current, b1, b2, advance_b1, advance_b2 = self._merge_until_limit(current, b1, b2, end_b1, end_b2)
             output_file.append(current)
             generated += 1
             current = {}
 
-            # Solo leer el siguiente bucket si el actual fue completamente consumido
-            if not new_b1 and i <= r1:
+            if advance_b1 and i < r1:
                 i += 1
-                b1 = self.file.read(i) if i <= r1 else None
-            else:
-                b1 = new_b1
+                b1 = self.file.read(i)
 
-            if not new_b2 and j <= r2:
+            if advance_b2 and j < r2:
                 j += 1
-                b2 = self.file.read(j) if j <= r2 else None
-            else:
-                b2 = new_b2
+                b2 = self.file.read(j)
 
-        # Rellenar con buckets vacíos si generamos menos que el total original
         while generated < original_total:
             output_file.append({})
             generated += 1
+
 
     def buildIndex(self):
         self.logger.info("Iniciando construcción del índice con SPIMI por rondas.")
@@ -424,14 +416,14 @@ def test_merge_until_limit():
     b2 = {'w0': {'d2': 2, 'd3': 1, 'd4': 5}, 'w6': {'d1': 3, 'd6': 3, 'd8': 1}, 'w7': {'d0': 3, 'd2': 1, 'd3': 4, 'd4': 3, 'd6': 3}}
     
     index = InvertedIndex("test_hard.dat")
-    cur, b1, b2 = index._merge_until_limit({}, b1, b2)
+    cur, b1, b2, x1, x2 = index._merge_until_limit({}, b1, b2, False, False)
     
     print(cur)
     print(b1)
     print(b2)
     print()
 
-    cur, b1, b2 = index._merge_until_limit({}, b1, b2)
+    cur, b1, b2, y1, y2 = index._merge_until_limit({}, b1, b2, True, False)
     print(cur)
     print(b1)
     print(b2)
@@ -455,6 +447,6 @@ def manual_test():
     
 
 if __name__ == "__main__":
-    test_merge_until_limit()
+    test_hard_merge()
 
 
