@@ -11,7 +11,7 @@ import math
 
 import logger
 
-BUCKET_LIMIT = 100
+BUCKET_LIMIT = 200
 
 BType = Dict[str, Dict[str, int]]
 
@@ -132,10 +132,10 @@ class InvertedIndex:
             - merged_partial: los postings que se insertaron
             - rest: el resto (None si todo fue insertado)
         """
-        print("==========")
-        print(current)
-        print(p1)
-        print(p2)
+        #print("==========")
+        #print(current)
+        #print(p1)
+        #print(p2)
         all_docs = sorted(set(p1) | set(p2))
         merged = OrderedDict()
         rest = OrderedDict()
@@ -147,16 +147,25 @@ class InvertedIndex:
             temp[term] = dict(merged)
             if len(pickle.dumps(temp)) > BUCKET_LIMIT:
                 # Saca el último doc y lo pasa a rest
-                last_doc = list(merged.keys())[-1]
-                rest[last_doc] = merged.pop(last_doc)
+                # El último doc agregado causó overflow, así que lo quitamos
+                overflow_doc = list(merged.keys())[-1]
+                merged.pop(overflow_doc)
+
+                # Agregamos overflow_doc y todos los docs restantes a rest
+                rest[overflow_doc] = p1.get(overflow_doc, 0) + p2.get(overflow_doc, 0)
+
+                # Y agregamos todos los que no se procesaron aún
+                remaining_docs = all_docs[all_docs.index(overflow_doc) + 1:]
+                for doc in remaining_docs:
+                    rest[doc] = p1.get(doc, 0) + p2.get(doc, 0)
                 break
 
         inserted = bool(merged)
         rest = dict(rest) if rest else None
-        print(inserted) 
-        print(dict(merged))
-        print(rest)
-        print("-----------")
+        #print(inserted) 
+        #print(dict(merged))
+        #print(rest)
+        #print("-----------")
         return inserted, dict(merged), rest
 
     def _merge_until_limit(
@@ -167,93 +176,74 @@ class InvertedIndex:
         end_b1: bool,
         end_b2: bool
     ) -> Tuple[BType, Optional[BType], Optional[BType], bool, bool]:
-        keys1 = list(b1.keys()) if b1 else []
-        keys2 = list(b2.keys()) if b2 else []
-        i = j = 0
+        b1 = dict(b1) if b1 else {}
+        b2 = dict(b2) if b2 else {}
 
-        while i < len(keys1) or j < len(keys2):
-            print(current)
-            print(b1)
-            print(b2)
-            print("000000000000")
-            # Forzar seguir si uno terminó y no esperamos más bloques
-            force_b1_done = i >= len(keys1) and end_b1
-            force_b2_done = j >= len(keys2) and end_b2
+        while b1 or b2:
+            force_b1_done = not b1 and end_b1
+            force_b2_done = not b2 and end_b2
 
-            # Caso: term solo en b1 o ya se acabó b2 y no habrá más
-            if (i < len(keys1) and (j >= len(keys2) or keys1[i] < keys2[j])) or force_b2_done:
-                print("AAA")
-                if i >= len(keys1): break
-                term = keys1[i]
+            if b1 and (not b2 or next(iter(b1)) < next(iter(b2))) or force_b2_done:
+                #print("AAAA")
+                term = next(iter(b1))
                 p1 = b1[term]
                 p2 = {}
 
                 inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
                 if not inserted:
-                    return current, b1, b2, False, False
+                    return current, b1 or None, b2 or None, False, False
 
                 current[term] = merged_partial
 
                 if rest_postings:
-                    rest_b1 = {term: rest_postings, **{k: b1[k] for k in keys1[i + 1:]}} if i + 1 < len(keys1) else {term: rest_postings}
-                    rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
-                    return current, rest_b1, rest_b2, False, False
+                    b1[term] = rest_postings
+                else:
+                    del b1[term]
 
-                i += 1
-                if i == len(keys1) and not end_b1:
-                    rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
-                    return current, None, rest_b2, True, False
+                if not b1 and not end_b1:
+                    return current, None, b2 or None, True, False
 
-            # Caso: term solo en b2 o ya se acabó b1 y no habrá más
-            elif (j < len(keys2) and (i >= len(keys1) or keys2[j] < keys1[i])) or force_b1_done:
-                print("BBB")
-                if j >= len(keys2): break
-                term = keys2[j]
+            elif b2 and (not b1 or next(iter(b2)) < next(iter(b1))) or force_b1_done:
+                #print("BBBB")
+                term = next(iter(b2))
                 p1 = {}
                 p2 = b2[term]
 
                 inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
                 if not inserted:
-                    return current, b1, b2, False, False
+                    return current, b1 or None, b2 or None, False, False
 
                 current[term] = merged_partial
 
                 if rest_postings:
-                    rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
-                    rest_b2 = {term: rest_postings, **{k: b2[k] for k in keys2[j + 1:]}} if j + 1 < len(keys2) else {term: rest_postings}
-                    return current, rest_b1, rest_b2, False, False
+                    b2[term] = rest_postings
+                else:
+                    del b2[term]
 
-                j += 1
-                if j == len(keys2) and not end_b2:
-                    rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
-                    return current, rest_b1, None, False, True
+                if not b2 and not end_b2:
+                    return current, b1 or None, None, False, True
 
-            # Caso: término en ambos
             else:
-                print("CCC")
-                if i >= len(keys1) or j >= len(keys2): break
-                term = keys1[i]
+                #print("CCCC")
+                term = next(iter(b1))
                 p1 = b1[term]
                 p2 = b2[term]
 
                 inserted, merged_partial, rest_postings = self._merge_postings_limited(current, term, p1, p2)
                 if not inserted:
-                    return current, b1, b2, False, False
+                    return current, b1 or None, b2 or None, False, False
 
                 current[term] = merged_partial
 
                 if rest_postings:
-                    rest_b1 = {k: b1[k] for k in keys1[i + 1:]} if i + 1 < len(keys1) else None
-                    rest_b2 = {term: rest_postings, **({k: b2[k] for k in keys2[j + 1:]} if j + 1 < len(keys2) else {})}
-                    return current, rest_b1, rest_b2, False, False
+                    del b1[term]
+                    b2[term] = rest_postings
+                else:
+                    del b1[term]
+                    del b2[term]
 
-                i += 1
-                j += 1
-
-                if (i == len(keys1) and not end_b1) or (j == len(keys2) and not end_b2):
-                    rest_b1 = {k: b1[k] for k in keys1[i:]} if i < len(keys1) else None
-                    rest_b2 = {k: b2[k] for k in keys2[j:]} if j < len(keys2) else None
-                    return current, rest_b1, rest_b2, i == len(keys1) and not end_b1, j == len(keys2) and not end_b2
+                if not b1 and not end_b1 or not b2 and not end_b2:
+                    return current, b1 or None, b2 or None, not b1 and not end_b1, not b2 and not end_b2
 
         return current, None, None, False, False
 
@@ -379,7 +369,7 @@ class InvertedIndex:
 
 import random
 
-def generate_random_buckets(num_buckets=4, terms_count=10, docs_count=10, bucket_limit=BUCKET_LIMIT) -> List[Dict[str, Dict[str, int]]]:
+def generate_random_buckets(num_buckets=4, terms_count=100, docs_count=30, bucket_limit=BUCKET_LIMIT) -> List[Dict[str, Dict[str, int]]]:
     term_pool = [f"w{i}" for i in range(terms_count)]
     doc_pool = [f"d{i}" for i in range(docs_count)]
 
@@ -441,7 +431,7 @@ def test_merge_until_limit():
     print(b2)
     print()
 
-    cur, b1, b2, y1, y2 = index._merge_until_limit({}, b1, b2, True, False)
+    cur, b1, b2, y1, y2 = index._merge_until_limit({}, b1, b2, True, True)
     print(cur)
     print(b1)
     print(b2)
@@ -482,6 +472,6 @@ def manual_test_2():
     
 
 if __name__ == "__main__":
-    test_merge_until_limit()
+    test_hard_merge()
 
 
