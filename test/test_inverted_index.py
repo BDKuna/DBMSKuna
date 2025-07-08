@@ -21,7 +21,7 @@ INDEX_PATH   = '../datasets/data2/mpst_full_data_inv.dat'
 if __name__ == "__main__":
     index = InvertedIndex(INDEX_PATH)
 
-    results = index.searchQuery("word word word", 5)
+    results = index.searchQuery("world wide web", 5)
     print("Documentos encontrados:", results)
 
     # Extraer las líneas que corresponden a los resultados

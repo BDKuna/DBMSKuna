@@ -463,9 +463,24 @@ class InvertedIndex:
         return result, len(result.keys())
 
     def searchQuery(self, consulta: str, limit: int) -> list[str]:
-        query_tf = bagOfWords(consulta)
+        query_tf_original = bagOfWords(consulta)
         total_docs = self.docfile._read_header()
-        vector_doc = [self._get_by_word(word) for word in query_tf]
+
+        # Filtra palabras que no tienen resultados en el índice
+        query_tf = {}
+        vector_doc = []
+
+        for word, tf in query_tf_original.items():
+            result = self._get_by_word(word)
+            if result:
+                query_tf[word] = tf
+                vector_doc.append(result)
+            else:
+                print(f"Palabra ignorada (sin resultados): '{word}'")
+
+        if not vector_doc:
+            print("Ninguna palabra de la consulta está en el índice. No se encontraron resultados.")
+            return []
 
         query_tf_idf = {}
         for (word, tf), (postings, df) in zip(query_tf.items(), vector_doc):
