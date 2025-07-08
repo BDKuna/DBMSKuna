@@ -176,7 +176,6 @@ class InvertedIndex:
             force_b2_done = not b2 and end_b2
 
             if b1 and (not b2 or next(iter(b1)) < next(iter(b2))) or force_b2_done:
-                #print("AAAA")
                 term = next(iter(b1))
                 p1 = b1[term]
                 p2 = {}
@@ -196,7 +195,6 @@ class InvertedIndex:
                     return current, None, b2 or None, True, False
 
             elif b2 and (not b1 or next(iter(b2)) < next(iter(b1))) or force_b1_done:
-                #print("BBBB")
                 term = next(iter(b2))
                 p1 = {}
                 p2 = b2[term]
@@ -216,7 +214,6 @@ class InvertedIndex:
                     return current, b1 or None, None, False, True
 
             else:
-                #print("CCCC")
                 term = next(iter(b1))
                 p1 = b1[term]
                 p2 = b2[term]
@@ -283,7 +280,6 @@ class InvertedIndex:
         active_ranges = [(i, i) for i in range(num_buckets)]
 
         while len(active_ranges) > 1:
-            self.file.show()
             self.logger.info(f"--- Ronda #{round_num} ---")
             temp_name = current_name[:-4] + f"_tmp.dat"
             if os.path.exists(temp_name):
