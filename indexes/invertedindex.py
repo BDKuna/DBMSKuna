@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 #from preprocessing.text import *
 import math
+import csv 
 
 import logger
 
@@ -15,6 +16,7 @@ BUCKET_LIMIT = 1024
 
 BType = Dict[str, Dict[str, int]]
 
+#################################################3
 import nltk
 import re
 from nltk.corpus import stopwords
@@ -43,6 +45,82 @@ def bagOfWords(text:str) -> Dict[str, int]:
         w = _STEMMER.stem(w)             # stemming
         tf[w] = tf.get(w, 0) + 1
     return tf
+#############################################
+
+DOC_HEADER_FORMAT = "i"       # Número de documentos
+DOC_RECORD_FORMAT = "10si"    # (doc_id: str (10 bytes), term_count: int)
+DOC_HEADER_SIZE = struct.calcsize(DOC_HEADER_FORMAT)
+DOC_RECORD_SIZE = struct.calcsize(DOC_RECORD_FORMAT)
+
+class DocumentFile:
+    def __init__(self, filename: str):
+        self.filename = filename
+        self.logger = logger.CustomLogger(f"DOCUMENT-FILE-{filename}".upper())
+
+        if not os.path.exists(filename):
+            with open(filename, 'wb') as f:
+                f.write(struct.pack(DOC_HEADER_FORMAT, 0))
+            self.logger.info(f"Archivo {filename} creado con header.")
+
+    def _read_header(self) -> int:
+        with open(self.filename, 'rb') as f:
+            data = f.read(DOC_HEADER_SIZE)
+            return struct.unpack(DOC_HEADER_FORMAT, data)[0] if data else 0
+
+    def _write_header(self, num_docs: int):
+        with open(self.filename, 'r+b') as f:
+            f.seek(0)
+            f.write(struct.pack(DOC_HEADER_FORMAT, num_docs))
+
+    def append(self, doc_id: str, term_count: int) -> int:
+        num_docs = self._read_header()
+        doc_id_encoded = doc_id.encode('utf-8')[:16].ljust(16, b'\x00')
+        with open(self.filename, 'r+b') as f:
+            f.seek(DOC_HEADER_SIZE + num_docs * DOC_RECORD_SIZE)
+            f.write(struct.pack(DOC_RECORD_FORMAT, doc_id_encoded, term_count))
+        self._write_header(num_docs + 1)
+        self.logger.debug(f"Append: doc_id={doc_id}, term_count={term_count}")
+        return num_docs
+
+    def read(self, pos: int) -> Optional[tuple[str, int]]:
+        with open(self.filename, 'rb') as f:
+            f.seek(DOC_HEADER_SIZE + pos * DOC_RECORD_SIZE)
+            data = f.read(DOC_RECORD_SIZE)
+            if not data or len(data) < DOC_RECORD_SIZE:
+                self.logger.warning(f"Intento de lectura inválida en posición {pos}")
+                return None
+            doc_id_raw, term_count = struct.unpack(DOC_RECORD_FORMAT, data)
+            doc_id = doc_id_raw.rstrip(b'\x00').decode('utf-8')
+            return doc_id, term_count
+
+    def find(self, doc_id: str) -> Optional[int]:
+        """Busca la cantidad de términos de un doc_id usando búsqueda binaria."""
+        left = 0
+        right = self._read_header() - 1
+
+        while left <= right:
+            mid = (left + right) // 2
+            record = self.read(mid)
+            if record is None:
+                break
+
+            current_id, term_count = record
+            if current_id == doc_id:
+                return term_count
+            elif current_id < doc_id:
+                left = mid + 1
+            else:
+                right = mid - 1
+
+        return None
+
+    def show(self):
+        num_records = self._read_header()
+        self.logger.info(f"Mostrando contenido de {self.filename} ({num_records} registros):")
+
+        for i in range(num_records):
+            record = self.read(i)
+            print(f"Record {i}: {record}")
 
 
 class InvertedFile:
@@ -135,6 +213,7 @@ class InvertedIndex:
 
         self.logger.info(f"Inicializando InvertedIndex con archivo {filename}.")
         self.file = InvertedFile(filename)
+        self.docfile = DocumentFile(filename[:-4] + "_docs.dat")
 
     def insert_buckets(self, buckets : list[BType]):
         for b in buckets:
@@ -311,6 +390,7 @@ class InvertedIndex:
 
         while len(active_ranges) > 1:
             self.logger.warning(f"--- Ronda #{round_num} ---")
+            self.logger.warning(f"Number of buckets: {current_file._read_header()}")
             temp_name = current_name[:-4] + f"_tmp.dat"
             if os.path.exists(temp_name):
                 os.remove(temp_name)
@@ -343,7 +423,6 @@ class InvertedIndex:
             round_num += 1
 
         self.logger.info("Índice invertido completamente construido y ordenado.")
-
 
     def getByWord(self, w: str) -> Tuple[dict[int,int],int]:
         """
@@ -413,43 +492,71 @@ class InvertedIndex:
             else:
                 break  # Ya no aparece la palabra
 
-        return result, len(result.items())
+        return result, len(result.keys())
 
     def getLengthDoc(self,doc_id):
         #returns the lenght of the document (plis)
         return 1000
 
-
-    def search(self, consulta:str)->list[int]:
+    def search(self, consulta: str, limit: int) -> list[str]:
         query_tf = bagOfWords(consulta)
+        total_docs = self.docfile._read_header()
         vector_doc = [self.getByWord(word) for word in query_tf]
 
-        # Calcular TF-IDF de la consulta
-        query_tf_idf = {word: (tf * vector_doc[i][1]) for i,(word, tf) in enumerate(query_tf.items())}
-        query_norm = math.sqrt((sum(value ** 2 for value in query_tf_idf.values())))
+        query_tf_idf = {}
+        for (word, tf), (postings, df) in zip(query_tf.items(), vector_doc):
+            idf = math.log((total_docs + 1) / (df + 1)) + 1  # Smooth IDF
+            query_tf_idf[word] = tf * idf
+
+        query_norm = math.sqrt(sum(value ** 2 for value in query_tf_idf.values()))
 
         score = {}
 
-        # Calcular similitud de cosenos para cada documento
-        for i, word in enumerate(query_tf):
-            for doc_id, tf in vector_doc[i][0].items():
+        # 2. Calcular TF-IDF para cada documento y su similitud
+        for i, (word, tf_q) in enumerate(query_tf.items()):
+            postings, df = vector_doc[i]
+            idf = math.log((total_docs + 1) / (df + 1)) + 1  # Smooth IDF
+            for doc_id, tf_d in postings.items():
+                tfidf_d = tf_d * idf
+
+                # Inicializa score y acumulador parcial
                 if doc_id not in score:
-                    score[doc_id] = 0
-                # Calcular TF-IDF del documento
-                doc_tf_idf = tf * vector_doc[i][1]
-                score[doc_id] += query_tf_idf[word] * doc_tf_idf # Producto punto
+                    score[doc_id] = {"dot": 0.0, "doc_norm_sq": 0.0}
 
-        # Normalizar por la longitud de los vectores para la definición de similitud de cosenos
-        for doc_id in score:
-            score[doc_id] /= (query_norm * self.getLengthDoc(doc_id))
+                score[doc_id]["dot"] += tfidf_d * query_tf_idf[word]
+                score[doc_id]["doc_norm_sq"] += tfidf_d ** 2
 
-        # Ordenar los resultados por similitud
-        result = sorted(score.items(), key=lambda tup: tup[1], reverse=True)
-        return result
+        # 3. Calcular similitud coseno
+        result = []
+        for doc_id, values in score.items():
+            dot = values["dot"]
+            doc_norm = math.sqrt(values["doc_norm_sq"])
+            if query_norm > 0 and doc_norm > 0:
+                sim = dot / (query_norm * doc_norm)
+                result.append((sim, doc_id))
+
+        # 4. Ordenar y devolver los doc_ids más similares
+        result.sort(reverse=True)  # mayor similitud primero
+        return [(doc_id, _) for _, doc_id in result[:limit]]
+
 
 INDEX_PATH   = '../preprocessing/table_column_texts.dat'  
+CSV_PATH     = '../preprocessing/data2/mpst_full_data.csv'        
 
 if __name__ == "__main__":
     index = InvertedIndex(INDEX_PATH)
-    # index.file.show()
-    print(index.getByWord("youth"))
+
+    results = index.search("iron man tony stark captain america bucky burns", 5)
+    print("Documentos encontrados:", results)
+
+    # Extraer las líneas que corresponden a los resultados
+    result_ids = set(int(doc_id[2:]) for doc_id, _ in results)
+
+    with open(CSV_PATH, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for idx, row in enumerate(reader):
+            if idx in result_ids:
+                print(f"\n🗂️ Documento ID: t-{idx}")
+                print(f"📄 Nombre:\n{row['title']}")
+                print(f"📄 Texto:\n{row['plot_synopsis']}")
+

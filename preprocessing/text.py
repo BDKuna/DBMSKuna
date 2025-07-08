@@ -10,10 +10,10 @@ from typing import Dict, List, Optional, Iterator, Tuple, OrderedDict
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-from indexes.invertedindex import InvertedFile, BUCKET_LIMIT, InvertedIndex
+from indexes.invertedindex import InvertedFile, BUCKET_LIMIT, DocumentFile, InvertedIndex
 
 # --- Configuración fija ---
-CSV_PATH     = 'data/True.csv'        
+CSV_PATH     = 'data2/mpst_full_data.csv'        
 INDEX_PATH   = 'table_column_texts.dat'  
 
 BType = Dict[str, Dict[str, int]]
@@ -46,11 +46,6 @@ def bagOfWords(text:str) -> Dict[str, int]:
         tf[w] = tf.get(w, 0) + 1
     return tf
 
-def preprocess(text:str):
-    #Sergio: Esto lo uso, asi q pls devuelve así :D
-    #Te lo devuelvo igual >:D
-    return text.split()
-
 # read dataset, save with InvertedFile
 def saveDatasetOnInvertedFile() -> InvertedFile:
     """
@@ -61,6 +56,7 @@ def saveDatasetOnInvertedFile() -> InvertedFile:
     5. Al final, flush final
     """
     inv = InvertedFile(INDEX_PATH)
+    doc = DocumentFile(INDEX_PATH[:-4] + "_docs.dat")
     bucket: BType = {}
 
     with open(CSV_PATH, newline='', encoding='utf-8') as f:
@@ -70,7 +66,8 @@ def saveDatasetOnInvertedFile() -> InvertedFile:
                 print(f"Processing {idx} text")
             if idx == 5000 : break
             doc_id = f"t-{idx}"
-            full_bow = bagOfWords(row["text"])
+            full_bow = bagOfWords(row["plot_synopsis"])
+            doc.append(doc_id, len(full_bow.keys()))
 
             # Lista de palabras por insertar
             pending_terms = list(full_bow.items())
@@ -103,15 +100,17 @@ def saveDatasetOnInvertedFile() -> InvertedFile:
     
     return inv
 
-"""
+
 if __name__ == "__main__":
     if os.path.exists(INDEX_PATH):
         os.remove(INDEX_PATH)
+    if os.path.exists(INDEX_PATH[:-4] + "_docs.dat"):
+        os.remove(INDEX_PATH[:-4] + "_docs.dat")
     inv : InvertedFile = saveDatasetOnInvertedFile()
     
     index : InvertedIndex = InvertedIndex(INDEX_PATH)
     print(inv._read_header())
     index.buildIndex()
     inv.show()
-"""
+
 #    print("Proceso completado. Buckets guardados en", INDEX_PATH)
