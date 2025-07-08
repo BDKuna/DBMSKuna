@@ -4,16 +4,19 @@ import re
 import string
 import pickle
 import csv
+from typing import Dict, List, Optional, Iterator, Tuple, OrderedDict
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-from indexes.invertedindex import InvertedFile, BUCKET_LIMIT
+from indexes.invertedindex import InvertedFile, BUCKET_LIMIT, InvertedIndex
 
 # --- Configuración fija ---
-CSV_PATH     = 'data/dataset.csv'        
+CSV_PATH     = 'data/True.csv'        
 INDEX_PATH   = 'table_column_texts.dat'  
 
+BType = Dict[str, Dict[str, int]]
 
 import nltk
 from nltk.corpus import stopwords
@@ -26,7 +29,7 @@ _STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
 _STEMMER    = SnowballStemmer('english')         # stemmer inglés
 
 # TODO Quenta
-def bagOfWords(text:str):
+def bagOfWords(text:str) -> Dict[str, int]:
     """
     1) Llama a preprocess()
     2) Pasa a minúsculas, limpia puntuación
@@ -35,7 +38,7 @@ def bagOfWords(text:str):
     5) Cuenta frecuencias → {stem: tf}
     """
     tf = {}
-    for tok in preprocess(text):
+    for tok in text.split():
         w = tok.lower()                  # minúsculas
         w = _CLEAN_RE.sub('', w)         # quita signos, deja alfanuméricos
         if not w or w in _STOPWORDS:     # descartar
@@ -50,58 +53,66 @@ def preprocess(text:str):
     return text.split()
 
 # read dataset, save with InvertedFile
-def saveDatasetOnInvertedFile():
+def saveDatasetOnInvertedFile() -> InvertedFile:
     """
-    1) Lee CSV (id, description)
-    2) Por cada doc, obtiene bow = bagOfWords(...)
-    3) Inserta en bucket {w: {doc_id: tf}}
-    4) Si pickle.dumps(bucket) > BUCKET_LIMIT:
-         a) Quita aportes del doc actual
-         b) Ordena alfabéticamente palabras y doc_ids
-         c) inv.append(ordered)
-         d) Reinicia bucket con sólo el bow de este doc
-    5) Al final, flush si queda algo.
+    1. Lee CSV con columnas: title,text,subject,date
+    2. Para cada fila, usa `subject` y genera ID como t-0, t-1, ...
+    3. Genera bag of words
+    4. Inserta en bucket hasta que pase el límite, entonces hace flush parcial
+    5. Al final, flush final
     """
     inv = InvertedFile(INDEX_PATH)
-    bucket = {}
+    bucket: BType = {}
 
     with open(CSV_PATH, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            doc_id = int(row['id'])
-            bow    = bagOfWords(row['description'])
+        for idx, row in enumerate(reader):
+            if idx % 1000 == 0:
+                print(f"Processing {idx} text")
+            if idx == 5000 : break
+            doc_id = f"t-{idx}"
+            full_bow = bagOfWords(row["text"])
 
-            # 1) añadir bow al bucket
-            for w, freq in bow.items():
-                bucket.setdefault(w, {})[doc_id] = freq
+            # Lista de palabras por insertar
+            pending_terms = list(full_bow.items())
+            term_idx = 0
 
-            # 2) si supera limite, flush parcial
-            raw = pickle.dumps(bucket)
-            if len(raw) > BUCKET_LIMIT:
-                # retira aportes del doc actual
-                for w in bow:
-                    bucket[w].pop(doc_id, None)
-                    if not bucket[w]:
-                        del bucket[w]
+            while term_idx < len(pending_terms):
+                word, freq = pending_terms[term_idx]
+                # Insertar la palabra en el bucket
+                bucket.setdefault(word, {})[doc_id] = freq
 
-                # ordena:
-                ordered = {
-                    w: {did: bucket[w][did] for did in sorted(bucket[w])}
-                    for w in sorted(bucket)
-                }
-                inv.append(ordered)
+                # Verificar si excede el límite
+                raw = pickle.dumps(bucket)
+                if len(raw) > BUCKET_LIMIT:
+                    # Deshacer inserción de esta palabra
+                    bucket[word].pop(doc_id, None)
+                    if not bucket[word]:
+                        del bucket[word]
 
-                # reinicia bucket con sólo este doc
-                bucket = {w: {doc_id: tf} for w, tf in bow.items()}
+                    inv.append(bucket)
 
-    # 3) flush final
+                    # Reiniciar bucket
+                    bucket = {}
+                    # No aumentar term_idx, este término no fue insertado aún
+                else:
+                    term_idx += 1  # Esta palabra sí se insertó, pasar a la siguiente
+
+    # Flush final
     if bucket:
-        ordered = {
-            w: {did: bucket[w][did] for did in sorted(bucket[w])}
-            for w in sorted(bucket)
-        }
-        inv.append(ordered)
+        inv.append(bucket)
+    
+    return inv
 
-#if __name__ == "__main__":
-#    saveDatasetOnInvertedFile()
+"""
+if __name__ == "__main__":
+    if os.path.exists(INDEX_PATH):
+        os.remove(INDEX_PATH)
+    inv : InvertedFile = saveDatasetOnInvertedFile()
+    
+    index : InvertedIndex = InvertedIndex(INDEX_PATH)
+    print(inv._read_header())
+    index.buildIndex()
+    inv.show()
+"""
 #    print("Proceso completado. Buckets guardados en", INDEX_PATH)

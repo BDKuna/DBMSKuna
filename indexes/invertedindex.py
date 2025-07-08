@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Iterator, Tuple, OrderedDict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from preprocessing.text import *
+#from preprocessing.text import *
 import math
 
 import logger
@@ -263,7 +263,7 @@ class InvertedIndex:
 
 
     def buildIndex(self):
-        self.logger.info("Iniciando construcción del índice con SPIMI por rondas.")
+        self.logger.warning("Iniciando construcción del índice con SPIMI por rondas.")
         num_buckets = self.file._read_header()
 
         # Ordenar cada bucket individualmente
@@ -280,7 +280,7 @@ class InvertedIndex:
         active_ranges = [(i, i) for i in range(num_buckets)]
 
         while len(active_ranges) > 1:
-            self.logger.info(f"--- Ronda #{round_num} ---")
+            self.logger.warning(f"--- Ronda #{round_num} ---")
             temp_name = current_name[:-4] + f"_tmp.dat"
             if os.path.exists(temp_name):
                 os.remove(temp_name)
