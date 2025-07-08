@@ -15,6 +15,36 @@ BUCKET_LIMIT = 1024
 
 BType = Dict[str, Dict[str, int]]
 
+import nltk
+import re
+from nltk.corpus import stopwords
+from nltk.stem import SnowballStemmer
+# nltk.download('stopwords') 
+# CORRE ESTO LA PRIMERA VEZ
+
+_CLEAN_RE   = re.compile(r'[^a-z0-9]')           # deja sólo letras y dígitos
+_STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
+_STEMMER    = SnowballStemmer('english')         # stemmer inglés
+
+def bagOfWords(text:str) -> Dict[str, int]:
+    """
+    1) Llama a preprocess()
+    2) Pasa a minúsculas, limpia puntuación
+    3) Filtra stop-words en inglés
+    4) Aplica stemming
+    5) Cuenta frecuencias → {stem: tf}
+    """
+    tf = {}
+    for tok in text.split():
+        w = tok.lower()                  # minúsculas
+        w = _CLEAN_RE.sub('', w)         # quita signos, deja alfanuméricos
+        if not w or w in _STOPWORDS:     # descartar
+            continue
+        w = _STEMMER.stem(w)             # stemming
+        tf[w] = tf.get(w, 0) + 1
+    return tf
+
+
 class InvertedFile:
     HEADER_FORMAT = "i"
     HEADER_SIZE = 4
@@ -315,12 +345,75 @@ class InvertedIndex:
         self.logger.info("Índice invertido completamente construido y ordenado.")
 
 
-    def getByWord(self,word)->Tuple[dict[int,int],int]:
-        # se necesita devolver los documentos con su tf, y el idf, en el q se encuntra la palabra
-        index = {1:1,2:2,3:1,4:4,5:3}
-        total_docs = 100 #guardar en header
-        idf = math.log(total_docs / len(index))
-        return index, idf
+    def getByWord(self, w: str) -> Tuple[dict[int,int],int]:
+        """
+        Busca en el índice invertido todos los documentos que contienen la palabra `w`.
+
+        Asume que los buckets están ordenados por palabra.
+        Hace búsqueda binaria por buckets, y luego lineal hacia izquierda y derecha
+        mientras la palabra siga apareciendo.
+        """
+        low = 0
+        high = self.file._read_header() - 1
+        result = {}
+
+        # Paso 1: búsqueda binaria para encontrar un bucket que contenga la palabra
+        found_idx = -1
+        while low <= high:
+            mid = (low + high) // 2
+            bucket = self.file.read(mid)
+            if not bucket:
+                break
+
+            terms = list(bucket.keys())
+            if not terms:
+                break
+
+            if w < terms[0]:
+                high = mid - 1
+            elif w > terms[-1]:
+                low = mid + 1
+            else:
+                if w in bucket:
+                    found_idx = mid
+                    break
+                # Búsqueda lineal dentro del rango del bucket
+                for term in terms:
+                    if term == w:
+                        found_idx = mid
+                        break
+                if found_idx != -1:
+                    break
+                # Por convención, seguimos buscando a la izquierda
+                high = mid - 1
+
+        if found_idx == -1:
+            return {}  # No se encontró la palabra
+
+        # Paso 2: recorrer hacia la izquierda
+        i = found_idx - 1
+        while i >= 0:
+            bucket = self.file.read(i)
+            if w in bucket:
+                for doc_id, tf in bucket[w].items():
+                    result[doc_id] = result.get(doc_id, 0) + tf
+                i -= 1
+            else:
+                break  # Ya no aparece la palabra
+
+        # Paso 3: recorrer hacia la derecha (incluyendo el bucket encontrado)
+        i = found_idx
+        num_buckets = self.file._read_header()
+        while i < num_buckets:
+            bucket = self.file.read(i)
+            if w in bucket:
+                for doc_id, tf in bucket[w].items():
+                    result[doc_id] = result.get(doc_id, 0) + tf
+                i += 1
+            else:
+                break  # Ya no aparece la palabra
+
+        return result, len(result.items())
 
     def getLengthDoc(self,doc_id):
         #returns the lenght of the document (plis)
@@ -354,4 +447,9 @@ class InvertedIndex:
         result = sorted(score.items(), key=lambda tup: tup[1], reverse=True)
         return result
 
+INDEX_PATH   = '../preprocessing/table_column_texts.dat'  
 
+if __name__ == "__main__":
+    index = InvertedIndex(INDEX_PATH)
+    # index.file.show()
+    print(index.getByWord("youth"))

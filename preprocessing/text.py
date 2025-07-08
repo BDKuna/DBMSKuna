@@ -28,7 +28,6 @@ _CLEAN_RE   = re.compile(r'[^a-z0-9]')           # deja sólo letras y dígitos
 _STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
 _STEMMER    = SnowballStemmer('english')         # stemmer inglés
 
-# TODO Quenta
 def bagOfWords(text:str) -> Dict[str, int]:
     """
     1) Llama a preprocess()
