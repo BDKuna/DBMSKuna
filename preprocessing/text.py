@@ -10,44 +10,12 @@ from typing import Dict, List, Optional, Iterator, Tuple, OrderedDict
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-from indexes.invertedindex import InvertedFile, BUCKET_LIMIT, DocumentFile, InvertedIndex
+from indexes.invertedindex import InvertedFile, BUCKET_LIMIT, DocumentFile, BType
+from preprocessing.text_utils import bagOfWords
 
 # --- Configuración fija ---
-CSV_PATH     = 'data2/mpst_full_data.csv'        
-INDEX_PATH   = 'table_column_texts.dat'  
 
-BType = Dict[str, Dict[str, int]]
-
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem import SnowballStemmer
-# nltk.download('stopwords') 
-# CORRE ESTO LA PRIMERA VEZ
-
-_CLEAN_RE   = re.compile(r'[^a-z0-9]')           # deja sólo letras y dígitos
-_STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
-_STEMMER    = SnowballStemmer('english')         # stemmer inglés
-
-def bagOfWords(text:str) -> Dict[str, int]:
-    """
-    1) Llama a preprocess()
-    2) Pasa a minúsculas, limpia puntuación
-    3) Filtra stop-words en inglés
-    4) Aplica stemming
-    5) Cuenta frecuencias → {stem: tf}
-    """
-    tf = {}
-    for tok in text.split():
-        w = tok.lower()                  # minúsculas
-        w = _CLEAN_RE.sub('', w)         # quita signos, deja alfanuméricos
-        if not w or w in _STOPWORDS:     # descartar
-            continue
-        w = _STEMMER.stem(w)             # stemming
-        tf[w] = tf.get(w, 0) + 1
-    return tf
-
-# read dataset, save with InvertedFile
-def saveDatasetOnInvertedFile() -> InvertedFile:
+def processingDatasetOnInvertedFile(csv_path : str, column : str) -> str:
     """
     1. Lee CSV con columnas: title,text,subject,date
     2. Para cada fila, usa `subject` y genera ID como t-0, t-1, ...
@@ -55,18 +23,27 @@ def saveDatasetOnInvertedFile() -> InvertedFile:
     4. Inserta en bucket hasta que pase el límite, entonces hace flush parcial
     5. Al final, flush final
     """
-    inv = InvertedFile(INDEX_PATH)
-    doc = DocumentFile(INDEX_PATH[:-4] + "_docs.dat")
+
+    index_path = csv_path[:-4] + "_inv.dat"
+    doc_path = csv_path[:-4] + "_doc.dat"
+
+    if os.path.exists(index_path):
+        os.remove(index_path)
+    if os.path.exists(doc_path):
+        os.remove(doc_path)
+
+    inv = InvertedFile(index_path)
+    doc = DocumentFile(doc_path)
     bucket: BType = {}
 
-    with open(CSV_PATH, newline='', encoding='utf-8') as f:
+    with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for idx, row in enumerate(reader):
             if idx % 1000 == 0:
                 print(f"Processing {idx} text")
-            if idx == 5000 : break
+            if idx == 3000 : break
             doc_id = f"t-{idx}"
-            full_bow = bagOfWords(row["plot_synopsis"])
+            full_bow = bagOfWords(row[column])
             doc.append(doc_id, len(full_bow.keys()))
 
             # Lista de palabras por insertar
@@ -98,19 +75,4 @@ def saveDatasetOnInvertedFile() -> InvertedFile:
     if bucket:
         inv.append(bucket)
     
-    return inv
-
-
-if __name__ == "__main__":
-    if os.path.exists(INDEX_PATH):
-        os.remove(INDEX_PATH)
-    if os.path.exists(INDEX_PATH[:-4] + "_docs.dat"):
-        os.remove(INDEX_PATH[:-4] + "_docs.dat")
-    inv : InvertedFile = saveDatasetOnInvertedFile()
-    
-    index : InvertedIndex = InvertedIndex(INDEX_PATH)
-    print(inv._read_header())
-    index.buildIndex()
-    inv.show()
-
-#    print("Proceso completado. Buckets guardados en", INDEX_PATH)
+    return index_path

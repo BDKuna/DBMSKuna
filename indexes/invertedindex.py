@@ -6,46 +6,14 @@ from typing import Dict, List, Optional, Iterator, Tuple, OrderedDict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-#from preprocessing.text import *
+from preprocessing.text_utils import bagOfWords
 import math
 import csv 
-
 import logger
 
 BUCKET_LIMIT = 1024
 
 BType = Dict[str, Dict[str, int]]
-
-#################################################3
-import nltk
-import re
-from nltk.corpus import stopwords
-from nltk.stem import SnowballStemmer
-# nltk.download('stopwords') 
-# CORRE ESTO LA PRIMERA VEZ
-
-_CLEAN_RE   = re.compile(r'[^a-z0-9]')           # deja sólo letras y dígitos
-_STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
-_STEMMER    = SnowballStemmer('english')         # stemmer inglés
-
-def bagOfWords(text:str) -> Dict[str, int]:
-    """
-    1) Llama a preprocess()
-    2) Pasa a minúsculas, limpia puntuación
-    3) Filtra stop-words en inglés
-    4) Aplica stemming
-    5) Cuenta frecuencias → {stem: tf}
-    """
-    tf = {}
-    for tok in text.split():
-        w = tok.lower()                  # minúsculas
-        w = _CLEAN_RE.sub('', w)         # quita signos, deja alfanuméricos
-        if not w or w in _STOPWORDS:     # descartar
-            continue
-        w = _STEMMER.stem(w)             # stemming
-        tf[w] = tf.get(w, 0) + 1
-    return tf
-#############################################
 
 DOC_HEADER_FORMAT = "i"       # Número de documentos
 DOC_RECORD_FORMAT = "10si"    # (doc_id: str (10 bytes), term_count: int)
@@ -213,7 +181,7 @@ class InvertedIndex:
 
         self.logger.info(f"Inicializando InvertedIndex con archivo {filename}.")
         self.file = InvertedFile(filename)
-        self.docfile = DocumentFile(filename[:-4] + "_docs.dat")
+        self.docfile = DocumentFile(filename[:-8] + "_doc.dat")
 
     def insert_buckets(self, buckets : list[BType]):
         for b in buckets:
@@ -424,7 +392,7 @@ class InvertedIndex:
 
         self.logger.info("Índice invertido completamente construido y ordenado.")
 
-    def getByWord(self, w: str) -> Tuple[dict[int,int],int]:
+    def _get_by_word(self, w: str) -> Tuple[dict[int,int],int]:
         """
         Busca en el índice invertido todos los documentos que contienen la palabra `w`.
 
@@ -494,14 +462,10 @@ class InvertedIndex:
 
         return result, len(result.keys())
 
-    def getLengthDoc(self,doc_id):
-        #returns the lenght of the document (plis)
-        return 1000
-
-    def search(self, consulta: str, limit: int) -> list[str]:
+    def searchQuery(self, consulta: str, limit: int) -> list[str]:
         query_tf = bagOfWords(consulta)
         total_docs = self.docfile._read_header()
-        vector_doc = [self.getByWord(word) for word in query_tf]
+        vector_doc = [self._get_by_word(word) for word in query_tf]
 
         query_tf_idf = {}
         for (word, tf), (postings, df) in zip(query_tf.items(), vector_doc):
@@ -540,13 +504,14 @@ class InvertedIndex:
         return [(doc_id, _) for _, doc_id in result[:limit]]
 
 
+"""
 INDEX_PATH   = '../preprocessing/table_column_texts.dat'  
 CSV_PATH     = '../preprocessing/data2/mpst_full_data.csv'        
 
 if __name__ == "__main__":
     index = InvertedIndex(INDEX_PATH)
 
-    results = index.search("iron man tony stark captain america bucky burns", 5)
+    results = index.searchQuery("iron man tony stark captain america bucky burns", 5)
     print("Documentos encontrados:", results)
 
     # Extraer las líneas que corresponden a los resultados
@@ -560,3 +525,4 @@ if __name__ == "__main__":
                 print(f"📄 Nombre:\n{row['title']}")
                 print(f"📄 Texto:\n{row['plot_synopsis']}")
 
+"""
