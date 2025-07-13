@@ -289,6 +289,8 @@ class Parser:
                 column_definition.data_type = DataType.BOOL
             case "POINT":
                 column_definition.data_type = DataType.POINT
+            case "TEXT":
+                column_definition.data_type = DataType.TEXT
             case _:
                 self.error("unknown data type")
         if self.match(Token.Type.PRIMARY):
@@ -311,6 +313,8 @@ class Parser:
                     column_definition.index_type = IndexType.RTREE
                 case "BRIN":
                     column_definition.index_type = IndexType.BRIN
+                case "GIST":
+                    column_definition.index_type = IndexType.GIST
                 case _:
                     self.error("unknown index type")
         else:
@@ -434,6 +438,8 @@ class Parser:
                     create_index_stmt.index_type = IndexType.RTREE
                 case "BRIN":
                     create_index_stmt.index_type = IndexType.BRIN
+                case "GIST":
+                    create_index_stmt.index_type = IndexType.GIST
                 case _:
                     self.error("unknown index type")
         if not self.match(Token.Type.LPAR):

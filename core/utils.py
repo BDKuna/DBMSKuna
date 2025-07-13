@@ -39,7 +39,10 @@ def get_data_type(value) -> DataType:
             if isinstance(value[2], int):
                 return "knn"
         if len(value) == 2:
-            return DataType.POINT
+            if isinstance(value[1], float):
+                return DataType.POINT
+            if isinstance(value[1], str):
+                return "text_knn"
 
 def get_empty_value(column: Column):
     if column.data_type == DataType.INT:
@@ -126,6 +129,7 @@ class IndexType(Enum):
     BTREE = auto()
     RTREE = auto()
     BRIN = auto()
+    GIST = auto()
     NONE = auto()
 
 
