@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from preprocessing.text import processingDatasetOnInvertedFile
 from indexes.invertedindex import InvertedIndex
 
-CSV_PATH = "../datasets/data2/mpst_full_data.csv"
+CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "datasets", "data2", "mpst_full_data.csv")
 
 """
 if __name__ == "__main__":
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     index.buildIndex()
 """
 
-INDEX_PATH   = '../datasets/data2/mpst_full_data_inv.dat'  
+INDEX_PATH = os.path.join(os.path.dirname(__file__), "..", "datasets", "data2", "mpst_full_data_inv.dat")
 
 if __name__ == "__main__":
     index = InvertedIndex(INDEX_PATH)
