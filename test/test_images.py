@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-from preprocessing.image_utils import verificar_dimensiones, asociar_con_metadatos
+from preprocessing.imagenes.image_utils import verificar_dimensiones, asociar_con_metadatos
 
 IMG_PATH = "F:/fashion_dataset/archive/fashion-dataset/images"
 CSV_PATH = "F:/fashion_dataset/archive/fashion-dataset/styles.csv"
