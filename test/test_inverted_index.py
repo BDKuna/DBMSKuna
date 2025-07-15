@@ -33,15 +33,14 @@ def test_search_returns_results():
 if __name__ == '__main__':
     idx = _prepare_index()
     res = idx.searchQuery('jurassic park park', 5)
-    # Sort results by document id so they match the order used when
-    # printing the document contents below.
-    res.sort(key=lambda x: x[1], reverse=True)
+    res.sort(reverse=True)
     print('Documentos encontrados:', res)
-    ids = set(int(doc_id[2:]) for doc_id, _ in res)
     with open(CSV_PATH, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for i, row in enumerate(reader):
-            if i in ids:
-                print(f"\n🗂️ Documento ID: t-{i}")
-                print(f"📄 Nombre:\n{row['title']}")
-                print(f"📄 Texto:\n{row['plot_synopsis']}")
+        rows = list(csv.DictReader(f))
+
+        for doc_id, _ in res:
+            idx_num = int(doc_id[2:])
+            row = rows[idx_num]
+            print(f"\n🗂️ Documento ID: {doc_id}")
+            print(f"📄 Nombre:\n{row['title']}")
+            print(f"📄 Texto:\n{row['plot_synopsis']}")
