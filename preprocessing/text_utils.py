@@ -4,12 +4,15 @@ from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
 from typing import Dict
 
-# nltk.download('stopwords') 
-# CORRE ESTO LA PRIMERA VEZ
+# Ensure stopwords are available. If not, download them at runtime.
+try:
+    _STOPWORDS = set(stopwords.words("english"))
+except LookupError:  # pragma: no cover - only runs on first execution
+    nltk.download("stopwords", quiet=True)
+    _STOPWORDS = set(stopwords.words("english"))
 
-_CLEAN_RE   = re.compile(r'[^a-z0-9]')           # deja sólo letras y dígitos
-_STOPWORDS  = set(stopwords.words('english'))    # stop-words inglés
-_STEMMER    = SnowballStemmer('english')         # stemmer inglés
+_CLEAN_RE = re.compile(r"[^a-z0-9]")  # leave only alphanumeric chars
+_STEMMER = SnowballStemmer("english")
 
 def bagOfWords(text:str) -> Dict[str, int]:
     """
