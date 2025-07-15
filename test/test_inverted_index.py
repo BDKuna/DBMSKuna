@@ -32,10 +32,10 @@ def test_search_returns_results():
 
 if __name__ == '__main__':
     idx = _prepare_index()
-    res = idx.searchQuery('jurassic park', 5)
+    res = idx.searchQuery('jurassic park park', 5)
     # Sort results by document id so they match the order used when
     # printing the document contents below.
-    res.sort(key=lambda x: int(x[0].split('-')[1]))
+    res.sort(key=lambda x: x[1], reverse=True)
     print('Documentos encontrados:', res)
     ids = set(int(doc_id[2:]) for doc_id, _ in res)
     with open(CSV_PATH, newline='', encoding='utf-8') as f:

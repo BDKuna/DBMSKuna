@@ -39,9 +39,3 @@ Sin embargo, algunos archivos de prueba se ejecutan directamente con
 python3 test/test_inverted_index.py
 ```
 Algunas pruebas utilizan los CSV proporcionados en `test/`.
-
-## Directrices para Codex
-- Mantener el estilo PEP8 al modificar o añadir código.
-- Utilizar imports relativos según el patrón actual de los módulos.
-- No generar archivos fuera de los que permite `.gitignore`.
-- Trabajar siempre sobre la rama principal del repositorio (sin crear ramas nuevas).

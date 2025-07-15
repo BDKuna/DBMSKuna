@@ -61,6 +61,9 @@ def processingDatasetOnInvertedFile(csv_path: str, column: str) -> str:
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for idx, row in enumerate(reader):
+            if idx % 1000 == 0:
+                print(f"Processing {idx} text")
+            #if idx == 3000 : break
             doc_id = f"t-{idx}"
             indexer.add_document(doc_id, row[column])
 
