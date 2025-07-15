@@ -1,3 +1,5 @@
+"""Benchmarking text search using custom inverted index and PostgreSQL."""
+
 import csv
 import os
 import re
@@ -10,7 +12,10 @@ from indexes.invertedindex import InvertedIndex
 from preprocessing.text import processingDatasetOnInvertedFile
 
 
+# Dataset sizes used for each benchmark iteration
 SIZES = [1000, 2000, 4000, 8000, 16000, 32000, 64000]
+
+# Fixed queries for measuring search performance
 QUERIES = [
     "jurassic park",
     "the matrix",
@@ -24,9 +29,12 @@ QUERIES = [
     "superhero origin",
 ]
 
+# Path to the full dataset
 DATASET_PATH = Path("datasets/data2/mpst_full_data.csv")
+# Temporary directory for generated CSV files
 TMP_DIR = Path(".")
 
+# Connection parameters for the PostgreSQL instance
 PG_PARAMS = {
     "host": os.environ.get("PG_HOST", "localhost"),
     "port": os.environ.get("PG_PORT", "5432"),
@@ -37,7 +45,7 @@ PG_PARAMS = {
 
 
 def create_tmp_csv(n: int) -> Path:
-    """Create a temporary CSV with the first N rows."""
+    """Create a temporary CSV with the first ``n`` rows of the dataset."""
     tmp_csv = TMP_DIR / f"tmp_mpst_{n}.csv"
     with (
         open(DATASET_PATH, newline="", encoding="utf-8") as src,
@@ -66,6 +74,7 @@ def benchmark_myindex(n: int, queries: list[str]) -> float:
 
     timings = []
     for q in queries:
+        # Measure average search time over five executions
         start = time.perf_counter()
         for _ in range(5):
             idx.searchQuery(q, limit=5)
@@ -73,15 +82,19 @@ def benchmark_myindex(n: int, queries: list[str]) -> float:
 
     avg_ms = sum(timings) / len(timings) * 1000
 
-    for path in [tmp_csv, tmp_csv.with_suffix("_inv.dat"), tmp_csv.with_suffix("_doc.dat")]:
+    base = tmp_csv.stem  # sin la extensión .csv
+    inv_dat = tmp_csv.parent / f"{base}_inv.dat"
+    doc_dat = tmp_csv.parent / f"{base}_doc.dat"
+
+    for path in (tmp_csv, inv_dat, doc_dat):
         if path.exists():
-            os.remove(path)
+            path.unlink()
 
     return avg_ms
 
 
 def parse_execution_time(plan_rows: list[tuple[str]]) -> float:
-    """Extract execution time from EXPLAIN ANALYZE output."""
+    """Extract execution time from ``EXPLAIN ANALYZE`` output."""
     text = "\n".join(r[0] for r in plan_rows)
     match = re.search(r"Execution Time: ([0-9.]+) ms", text)
     return float(match.group(1)) if match else 0.0
@@ -96,6 +109,7 @@ def benchmark_postgres(n: int, queries: list[str], conn) -> float:
         "CREATE TABLE movies("
         "id serial PRIMARY KEY, title text, plot_synopsis text)"
     )
+    # Bulk load the temporary CSV into the database
     with open(tmp_csv, "r", encoding="utf-8") as f:
         cur.copy_expert(
             "COPY movies(title, plot_synopsis) FROM STDIN WITH CSV HEADER",
@@ -108,6 +122,7 @@ def benchmark_postgres(n: int, queries: list[str], conn) -> float:
         "UPDATE movies SET document_with_weights = "
         "to_tsvector('english', plot_synopsis)"
     )
+    # Create GIN index for full-text search
     cur.execute(
         "CREATE INDEX idx_movies_fts ON movies USING GIN(document_with_weights)"
     )
@@ -142,29 +157,33 @@ def benchmark_postgres(n: int, queries: list[str], conn) -> float:
 
 
 def main() -> None:
-    results_my = []
-    results_pg = []
+    """Run benchmarks for the custom index and PostgreSQL."""
+    results_my: list[tuple[int, str, float]] = []
+    results_pg: list[tuple[int, str, float]] = []
+
     conn = psycopg2.connect(**PG_PARAMS)
     conn.autocommit = True
     for n in SIZES:
         print(f"Benchmarking MyIndex with N={n}")
         my_time = benchmark_myindex(n, QUERIES)
-        results_my.append(my_time)
+        results_my.append((n, "MyIndex", my_time))
+
         print(f"Benchmarking PostgreSQL with N={n}")
         pg_time = benchmark_postgres(n, QUERIES, conn)
-        results_pg.append(pg_time)
+        results_pg.append((n, "PostgreSQL", pg_time))
+
     conn.close()
 
     header = f"| {'N':<6}| {'MyIndex (ms)':>12} | {'PostgreSQL (ms)':>15} |"
     print(header)
     print("|-----|--------------:|---------------:|")
-    for n, m, p in zip(SIZES, results_my, results_pg):
+    for (n, _, m), (_, __, p) in zip(results_my, results_pg):
         print(f"| {n:<4}| {m:12.3f} | {p:15.3f} |")
 
-    with open('benchmark_results.csv', 'w', newline='') as f:
+    with open("benchmark_results.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(['N', 'MyIndex_ms', 'PostgreSQL_ms'])
-        for n, m, p in zip(SIZES, results_my, results_pg):
+        writer.writerow(["N", "MyIndex_ms", "PostgreSQL_ms"])
+        for (n, _, m), (_, __, p) in zip(results_my, results_pg):
             writer.writerow([n, f"{m:.3f}", f"{p:.3f}"])
 
 
