@@ -1,16 +1,21 @@
 { pkgs ? import <nixpkgs> {} }:
 
-pkgs.mkShell {
-  buildInputs = with pkgs; [
-    python3                     # tu intérprete Python
-    python3Packages.rtree       # binding Python de libspatialindex
-    gcc                         # aporta libstdc++.so.6 al entorno
-    libspatialindex             # la librería C++ de spatial index :contentReference[oaicite:0]{index=0}
+# Trae todos los atributos de pkgs al scope
+with pkgs;
+
+mkShell {
+  buildInputs = [
+    python3
+    python3Packages.rtree
+    python3Packages.psycopg2
+    libspatialindex    # la C‐lib de SpatialIndex
+    postgresql         # cliente de Postgres (libpq)
+    zlib               # para libz.so.1
   ];
 
-  # Opcional, para forzar que LD_LIBRARY_PATH vea la .so de spatialindex
   shellHook = ''
-    export LD_LIBRARY_PATH=${pkgs.libspatialindex}/lib:$LD_LIBRARY_PATH
+    # Ahora libspatialindex, postgresql y zlib están en scope gracias al with pkgs
+    export LD_LIBRARY_PATH=${libspatialindex}/lib:${postgresql}/lib:${zlib}/lib:$LD_LIBRARY_PATH
   '';
 }
 

@@ -6,3 +6,4 @@
 *.dat.*
 *.csv
 .venv
+pgdata
