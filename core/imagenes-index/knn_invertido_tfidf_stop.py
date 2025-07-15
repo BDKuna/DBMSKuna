@@ -1,6 +1,6 @@
-import os
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 import time
 import pickle
 import numpy as np
@@ -12,10 +12,10 @@ start = time.time()
 
 # --- Configuración ---
 ROOT = "F:/fashion_dataset/archive/fashion-dataset"
-K = 1000
+K = 100
 TFIDF_PATH = os.path.join(ROOT, f"tfidf_k{K}.pkl")
 INDEX_PATH = os.path.join(ROOT, f"visual_index_k{K}.pkl")
-QUERY_ID = "10001"
+QUERY_ID = "9963"
 
 # --- Cargar vectores TF-IDF y ordenarlos ---
 print("📂 Cargando vectores TF-IDF...")
@@ -56,7 +56,7 @@ candidates_matrix = np.stack(candidates_vectors)
 similarities = cosine_similarity(query_vec, candidates_matrix)[0]
 
 # --- Mostrar resultados ---
-top_indices = similarities.argsort()[::-1][:5]
+top_indices = similarities.argsort()[::-1][:8]
 print("\n📌 Resultados más similares:")
 for i in top_indices:
     print(f"🔸 {candidates_ids[i]}  | Score: {similarities[i]:.4f}")
