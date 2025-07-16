@@ -5,7 +5,7 @@ if root_path not in sys.path:
 import subprocess
 
 from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import time
 
@@ -33,6 +33,7 @@ class Query(BaseModel):
 
 @app.post("/sql/")
 def query(q: Query):
+    print(q)
     try:
         start = time.time()
         result, message = parser.execute_sql(q.query)
@@ -62,3 +63,43 @@ def query(q: Query):
         'message': message,
         'execution_time': end - start
     }
+
+
+@app.post("/upload_img/")
+async def upload_img(file: UploadFile = File(...), table: str = Form(...), column: str = Form(...)):
+    """Receive a JPG image and store it under the data/img directory."""
+    print(f"Uploading image file to table: {table}, column: {column}...")
+    if not file.filename.lower().endswith(".jpg"):
+        raise HTTPException(status_code=400, detail="Only JPG files are allowed")
+
+    upload_dir = os.path.join(root_path, "data", "img")
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, file.filename)
+
+    with open(file_path, "wb") as f:
+        contents = await file.read()
+        f.write(contents)
+
+    return {
+        "filename": file.filename,
+        "saved_to": file_path,
+        "table": table,
+        "column": column
+    }
+
+@app.post("/upload_aud/")
+async def upload_aud(file: UploadFile = File(...), table: str = Form(...), column: str = Form(...)):
+    """Receive an MP3 audio file and store it under the data/mp3 directory."""
+    print(f"Uploading audio file to table: {table}, column: {column}...")
+    if not file.filename.lower().endswith(".mp3"):
+        raise HTTPException(status_code=400, detail="Only MP3 files are allowed")
+
+    upload_dir = os.path.join(root_path, "data", "mp3")
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, file.filename)
+
+    with open(file_path, "wb") as f:
+        contents = await file.read()
+        f.write(contents)
+
+    return {"filename": file.filename, "saved_to": file_path}
