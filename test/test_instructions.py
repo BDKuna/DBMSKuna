@@ -76,7 +76,7 @@ def test_index_insertions():
         IndexType.HASH,
     ]
 
-    csv_file = "basic_index_test.csv"
+    csv_file = os.path.join(os.path.dirname(__file__), "basic_index_test.csv")
     all_results = {}
 
     for index_type in index_types:
@@ -164,7 +164,7 @@ def test_index_insertions():
 def test_rtree_insertions():
     dbmanager = DBManager()
     table_name = "testrtree"
-    csv_file = "basic_rtree.csv"
+    csv_file = os.path.join(os.path.dirname(__file__), "basic_rtree.csv")
 
     dbmanager.drop_table(table_name, True)
 
@@ -190,4 +190,5 @@ def test_rtree_insertions():
     plt.show()
 
 
-test_rtree_insertions()
+if __name__ == "__main__":
+    test_rtree_insertions()

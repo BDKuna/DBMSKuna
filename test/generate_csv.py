@@ -6,7 +6,7 @@ from faker import Faker
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in os.sys.path:
     os.sys.path.append(root_path)
-from parser import parser
+from parserSQL import parser
 from core.dbmanager import DBManager
 from core import stats
 import time

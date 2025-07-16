@@ -10,10 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import time
 
 try:
-    from parser import parser
+    from parserSQL import parser
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "bitarray"])
-    from parser import parser
+    from parserSQL import parser
 
 app = FastAPI()
 app.add_middleware(

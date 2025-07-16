@@ -12,6 +12,8 @@ class BinaryOp(Enum):
     WC = auto()
     WR = auto()
     KNN = auto()
+    KNNTEXT = auto()
+    KNNMULTI = auto()
 
 class Condition:
     def __init__(self):

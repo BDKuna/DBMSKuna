@@ -7,8 +7,8 @@ class Token:
             CREATE, TABLE, DROP, AND, OR, NOT, AS, ORDER, BY, LIMIT, ID, STAR, BETWEEN,
             EQ, NEQ, LT, GT, LE, GE, COMMA, DOT, SEMICOLON, NUMVAL, FLOATVAL, STRINGVAL,
             BOOLVAL, PRIMARY, KEY, DATATYPE, INDEX, ON, USING, INDEXTYPE, ERR, END, 
-            WITHIN, RECTANGLE, CIRCLE, KNN, ASC, DESC, IF, EXISTS
-        ) = range(54)
+            WITHIN, RECTANGLE, CIRCLE, KNN, ASC, DESC, IF, EXISTS, KNNTEXT, KNNMULTI
+        ) = range(56)
 
     token_names = [
         "LPAR", "RPAR", "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES",
@@ -17,7 +17,7 @@ class Token:
         "GT", "LE", "GE", "COMMA", "DOT", "SEMICOLON", "NUMVAL", "FLOATVAL", "STRINGVAL",
         "BOOLVAL", "PRIMARY", "KEY", "DATATYPE", "INDEX", "ON", "USING", "INDEXTYPE",
         "ERR", "END", "WITHIN", "RECTANGLE", "CIRCLE", "KNN", "ASC", "DESC", "IF",
-        "EXISTS"
+        "EXISTS", "KNNTEXT", "KNNMULTI"
     ]
 
     def __init__(self, token_type, lexema=""):
@@ -49,6 +49,7 @@ class Scanner:
         state = 0
         self.start_lexema()
         c = self.input[self.current]
+        string_val = ''
         while True:
             if state == 0:
                 c = self.input[self.current]
@@ -70,7 +71,11 @@ class Scanner:
                         self.current += 1
                         self.pos += 1
                         c = self.input[self.current]
+                        if c == '\0':
+                            return Token(Token.Type.END)
                         while c != '\n':
+                            if c == '\0':
+                                return Token(Token.Type.END)
                             self.current += 1
                             self.pos += 1
                             c = self.input[self.current]
@@ -138,6 +143,18 @@ class Scanner:
                         self.current += 1
                         self.pos += 1
                         return Token(Token.Type.NEQ)
+                    elif c == '-':
+                        self.current += 1
+                        self.pos += 1
+                        c = self.input[self.current]
+                        if c == '>':
+                            self.current += 1
+                            self.pos += 1
+                            return Token(Token.Type.KNNMULTI)
+                        else:
+                            self.current -= 1
+                            self.pos -= 1
+                            return Token(Token.Type.LT)
                     else:
                         return Token(Token.Type.LT)
                 elif c == '>':
@@ -176,6 +193,16 @@ class Scanner:
                     self.current += 1
                     self.pos += 1
                     return Token(Token.Type.SEMICOLON)
+                elif c == '@':
+                    self.current += 1
+                    self.pos += 1
+                    c = self.input[self.current]
+                    if c == '@':
+                        self.current += 1
+                        self.pos += 1
+                        return Token(Token.Type.KNNTEXT)
+                    else:
+                        return Token(Token.Type.ERR)
                 elif c.isdigit():
                     state = 1
                 elif c == "'":
@@ -207,12 +234,20 @@ class Scanner:
                 self.current += 1
                 self.pos += 1
                 c = self.input[self.current]
-                if c == "'":
+                if c == '\\':
+                    c = self.input[self.current + 1]
+                    if c == "'":
+                        self.current += 1
+                        self.pos += 1
+                    string_val += self.input[self.current]
+                elif c == "'":
                     self.current += 1
                     self.pos += 1
-                    return Token(Token.Type.STRINGVAL, self.get_lexema()[1:-1])
+                    return Token(Token.Type.STRINGVAL, string_val)
                 elif c == '\0':
                     return Token(Token.Type.ERR)
+                else:
+                    string_val += self.input[self.current]
 
             elif state == 4:
                 self.current += 1
@@ -254,6 +289,7 @@ class Scanner:
                     "DATE": Token.Type.DATATYPE,
                     "BOOL": Token.Type.DATATYPE,
                     "POINT": Token.Type.DATATYPE,
+                    "TEXT": Token.Type.DATATYPE,
                     "INDEX": Token.Type.INDEX,
                     "ON": Token.Type.ON,
                     "USING": Token.Type.USING,
@@ -263,6 +299,7 @@ class Scanner:
                     "BTREE": Token.Type.INDEXTYPE,
                     "RTREE": Token.Type.INDEXTYPE,
                     "BRIN": Token.Type.INDEXTYPE,
+                    "GIST": Token.Type.INDEXTYPE,
                     "WITHIN": Token.Type.WITHIN,
                     "RECTANGLE": Token.Type.RECTANGLE,
                     "CIRCLE": Token.Type.CIRCLE,

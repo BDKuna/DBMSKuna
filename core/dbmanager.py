@@ -7,7 +7,7 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
-from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
+from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema, Column
 from core import utils
 from indexes.bplustree import BPlusTree
 from indexes.avltree import AVLTree
@@ -15,6 +15,9 @@ from indexes.EHtree import ExtendibleHashTree
 from indexes.Rtree import RTreeIndex, MBR, Circle
 from indexes.ISAMtree import ISAMIndex, test_isam_integrity
 from indexes.noindex import NoIndex
+from indexes.invertedindex import InvertedIndex
+from preprocessing.text import processingDatasetOnInvertedFile
+from core.text_file import TextFile
 
 import csv
 
@@ -74,6 +77,9 @@ class DBManager:
                         index = BPlusTree(table_schema, column)
                     case IndexType.RTREE:
                         index = RTreeIndex(table_schema, column)
+                    case IndexType.GIST:
+                        path = f"{self.tables_path}/{table_schema.table_name}/{table_schema.table_name}_{column_name}"
+                        index = processingDatasetOnInvertedFile(path)
                     case IndexType.NONE:
                         index = NoIndex(table_schema, column)
                     case _:
@@ -121,14 +127,16 @@ class DBManager:
     def bitmap_difference(self, a : bitarray, b : bitarray) -> bitarray:
         return self.bitmap_and(a, self.bitmap_not(b))
     
-    def retrieve_data(self, table_schema : TableSchema, bitmap : bitarray, limit = None) -> list[Record]:
+    def retrieve_data(self, table_schema : TableSchema, bitmap : bitarray, limit = None) -> tuple[list[Record], list[int]]:
         ids = self.bitmap_to_list(bitmap)
+        final_ids = []
         records = []
         record_file = RecordFile(table_schema)
         count = 0
         for id in ids:
             if limit != None and count >= limit:
                 break
+            final_ids.append(id)
             records.append(record_file.read(id))
             count += 1
         if bitmap[0]:
@@ -136,11 +144,12 @@ class DBManager:
             while id < record_file.max_id():
                 if limit != None and count >= limit:
                     break
+                final_ids.append(id)
                 record = record_file.read(id)
                 records.append(record)
                 id += 1
                 count += 1
-        return records
+        return (records, final_ids)
     
     def retrieve_data_and_delete(self, table_schema : TableSchema, bitmap : bitarray) -> list[Record]:
         ids = self.bitmap_to_list(bitmap)
@@ -196,6 +205,8 @@ class DBManager:
                         self.error("Varchar length was not specified")
                     if column.varchar_length <= 0:
                         self.error("Varchar length must be positive")
+                if column.data_type == DataType.TEXT and column.index_type != IndexType.NONE:
+                    self.error("Column of type TEXT cannot have an index on creation")
                 if column.index_type != IndexType.NONE and column.index_name == None:
                     column.index_name = f"idx_{column.name}_{column.index_type}"
             
@@ -203,13 +214,17 @@ class DBManager:
             self.save_table_schema(table_schema, path)
 
             for column in table_schema.columns:
-                print(column.index_type)
                 self.get_index(table_schema, column.name)
+                if column.data_type == DataType.TEXT:
+                    TextFile(f"{path}/{table_schema.table_name}_{column.name}").initialize()
             
             self.logger.info("Table created successfully")
 
     def drop_table(self, table_name : str, if_exists : bool = False) -> None:
         path = f"{self.tables_path}/{table_name}"
+        table = self.get_table_schema(table_name)
+        for column in table.columns:
+            self.indexes.pop(f"{table_name}.{column.name}", None)
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
@@ -235,35 +250,63 @@ class DBManager:
             if select_schema.limit <= 0:
                 self.error("limit must be positive")
 
+        self.limit = select_schema.limit
+        self.knn = False
         if select_schema.condition_schema.condition:
             bitmap = self.select_condition(table, select_schema.condition_schema.condition)
         else:
             bitmap = bitarray(1)
             bitmap.setall(1)
-        if select_schema.order_by == None:
-            result = self.retrieve_data(table, bitmap, select_schema.limit)
+        
+        if self.knn:
+            (result, ids) = self.retrieve_data(table, bitmap)
+            id_map = dict(zip(ids, result))
+            reordered_result = []
+            for id, score in self.knn_result:
+                if id in id_map:
+                    new_record = id_map[id]
+                    new_record.values.append(score)
+                    reordered_result.append(new_record)
+            result = reordered_result
         else:
-            result = self.retrieve_data(table, bitmap)
-            for i, column in enumerate(column_names):
-                if select_schema.order_by == column:
-                    ordered_column_num = i
-                    break
-            if select_schema.limit != None:
-                if select_schema.limit > len(result) / 2:
-                    if select_schema.asc:
-                        result = sorted(result, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
-                    else:
-                        result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
-                else:
-                    if select_schema.asc:
-                        result = heapq.nsmallest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
-                    else:
-                        result = heapq.nlargest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
+            if select_schema.order_by == None:
+                (result, _) = self.retrieve_data(table, bitmap, select_schema.limit)
             else:
-                if select_schema.asc:
-                    result = sorted(result, key=lambda x : x.values[ordered_column_num])
+                (result, _) = self.retrieve_data(table, bitmap)
+                for i, column in enumerate(column_names):
+                    if select_schema.order_by == column:
+                        ordered_column_num = i
+                        break
+                if select_schema.limit != None:
+                    if select_schema.limit > len(result) / 2:
+                        if select_schema.asc:
+                            result = sorted(result, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
+                        else:
+                            result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
+                    else:
+                        if select_schema.asc:
+                            result = heapq.nsmallest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
+                        else:
+                            result = heapq.nlargest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
                 else:
-                    result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])
+                    if select_schema.asc:
+                        result = sorted(result, key=lambda x : x.values[ordered_column_num])
+                    else:
+                        result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])
+        selected_columns = []
+        if select_schema.all:
+            selected_columns = table.columns
+        else:
+            for name in select_schema.column_list:
+                for column in table.columns:
+                    if column.name == name:
+                        selected_columns.append(column)
+        if self.knn:
+            new_column = Column('score', DataType.FLOAT)
+            selected_columns.append(new_column)
+            table.columns.append(new_column)
+            select_schema.column_list.append('score')
+            column_names.append('score')
         if not select_schema.all:
             for record in result:
                 value_map = {col.name: val for col, val in zip(table.columns, record.values)}
@@ -273,7 +316,11 @@ class DBManager:
             if record:
                 for i, value in enumerate(record.values):
                     if isinstance(value, tuple):
-                        record.values[i] = str(value)
+                        if isinstance(value[0], float):
+                            record.values[i] = str(value)
+                        else:
+                            path = f"{self.tables_path}/{table.table_name}/{table.table_name}_{selected_columns[i].name}"
+                            record.values[i] = TextFile(path).read(value[0], value[1])
                 final_result.append(record.values)
         return {
             'columns': column_names if select_schema.all else select_schema.column_list,
@@ -335,6 +382,20 @@ class DBManager:
                             return self.bitmap_not(self.list_to_bitmap(index.search(condition.right.value)))
                         case _:
                             self.error("operation not supported for POINT type")
+                if column.data_type == DataType.TEXT:
+                    if utils.get_data_type(condition.right.value) != DataType.VARCHAR:
+                        self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
+                    self.knn = True
+                    match op:
+                        case BinaryOp.KNNTEXT:
+                            index_path = self.get_index(table_schema, condition.left.column_name)
+                            result = InvertedIndex(index_path).searchQuery(condition.right.value, self.limit)
+                            self.knn_result = [(int(i[0]), i[1]) for i in result]
+                            return self.list_to_bitmap([int(i[0]) for i in result])
+                        case BinaryOp.KNNMULTI:
+                            self.error("<-> operator not supported")
+                        case _:
+                            self.error("operation not supported for TEXT type")
                 if column.data_type != utils.get_data_type(condition.right.value):
                     self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
                 match op:
@@ -356,6 +417,8 @@ class DBManager:
                     case BinaryOp.GE: # Usa indexes (menos hash)
                         index = self.get_index(table_schema, condition.left.column_name)
                         return self.list_to_bitmap(index.rangeSearch(condition.right.value, None))
+                    case _:
+                        self.error(f"operation not supported for {column.data_type} type")
         elif condition_type == BetweenCondition: # Usa indexes (menos hash)
             column = None
             for i in table_schema.columns:
@@ -393,7 +456,12 @@ class DBManager:
 
     def insert(self, table_name:str, values: list, columns: list):
         tableSchema: TableSchema = self.get_table_schema(table_name)
-        table_columns = [column.name for column in tableSchema.columns]
+        table_columns = []
+
+        for column in tableSchema.columns:
+            table_columns.append(column.name)
+            if column.index_type == IndexType.GIST:
+                self.error("Data cannot be inserted on a table with a GiST index")
 
         if columns and sorted(columns) != sorted(table_columns):
             self.error("The specificed columns don't match the table's columns")
@@ -408,11 +476,17 @@ class DBManager:
             reordered_values = values
 
         for i, value in enumerate(reordered_values):
-            if tableSchema.columns[i].data_type != utils.get_data_type(value):
+            if tableSchema.columns[i].data_type != utils.get_data_type(value) and not (tableSchema.columns[i].data_type == DataType.TEXT and utils.get_data_type(value) == DataType.VARCHAR):
                 self.error(f"value '{value}' is not of data type {tableSchema.columns[i].data_type}")
             if tableSchema.columns[i].data_type == DataType.VARCHAR:
                 if len(value) > tableSchema.columns[i].varchar_length:
                     self.error(f"varchar value '{value}' exceeds column's varchar length")
+
+        for i, value in enumerate(reordered_values):
+            if tableSchema.columns[i].data_type == DataType.TEXT:
+                path = f"{self.tables_path}/{table_name}/{table_name}_{tableSchema.columns[i].name}"
+                (pos, length) = TextFile(path).write(value)
+                reordered_values[i] = (pos, length)
 
         record = Record(tableSchema, reordered_values)
         record_file = RecordFile(tableSchema)
@@ -426,6 +500,9 @@ class DBManager:
 
     def delete(self, delete_schema : DeleteSchema) -> None:
         table = self.get_table_schema(delete_schema.table_name)
+        for column in table.columns:
+            if column.index_type == IndexType.GIST:
+                self.error("Data cannot be deleted on a table with a GiST index")
         bitmap = self.select_condition(table, delete_schema.condition_schema.condition)
         result = self.retrieve_data_and_delete(table, bitmap)
         for record in result:
@@ -478,6 +555,11 @@ class DBManager:
         if index_type == IndexType.ISAM:
             index_structure.build_index()
             test_isam_integrity(index_structure)
+        elif index_type == IndexType.GIST:
+            path = f"{self.tables_path}/{table_name}/{table_name}_{column_name}"
+            index_path = processingDatasetOnInvertedFile(path)
+            self.indexes[f"{table_name}.{column_name}"] = index_path
+            InvertedIndex(index_path).buildIndex()
         else:
             while pos < max_pos:
                 record = record_file.read(pos)
@@ -495,6 +577,7 @@ class DBManager:
                     self.error("Cannot drop index of type NoIndex")
                 if column.is_primary:
                     self.error("Cannot drop the primary key's index")
+                self.indexes.pop(f"{table_name}.{column.name}", None)
                 index.clear()
                 column.index_type = IndexType.NONE
                 column.index_name = None

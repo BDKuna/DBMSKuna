@@ -6,3 +6,5 @@
 *.dat.*
 *.csv
 *.pyc
+.venv
+pgdata

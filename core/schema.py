@@ -12,6 +12,7 @@ class DataType(Enum):
     DATE = auto()
     BOOL = auto()
     POINT = auto()
+    TEXT = auto()
 
     def __str__(self):
         return self.name
@@ -23,6 +24,7 @@ class IndexType(Enum):
     BTREE = auto()
     RTREE = auto()
     BRIN = auto()
+    GIST = auto()
     NONE = auto()
 
     def __str__(self):
@@ -81,6 +83,8 @@ class TableSchema:
             case IndexType.BRIN:
                 pass
                 # BRIN(table_schema, column)
+            case IndexType.GIST:
+                return None
             case IndexType.NONE:
                 return None
             case _:

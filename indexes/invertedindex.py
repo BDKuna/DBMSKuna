@@ -16,7 +16,10 @@ BUCKET_LIMIT = 1024
 BType = Dict[str, Dict[str, int]]
 
 DOC_HEADER_FORMAT = "i"       # Número de documentos
-DOC_RECORD_FORMAT = "10si"    # (doc_id: str (10 bytes), term_count: int)
+# Use 16 bytes for the document identifier to avoid truncation when
+# the dataset contains long identifiers. The previous value of 10
+# bytes caused inconsistencies as `append` already padded to 16 bytes.
+DOC_RECORD_FORMAT = "16si"    # (doc_id: str (16 bytes), term_count: int)
 DOC_HEADER_SIZE = struct.calcsize(DOC_HEADER_FORMAT)
 DOC_RECORD_SIZE = struct.calcsize(DOC_RECORD_FORMAT)
 
