@@ -70,7 +70,11 @@ class Scanner:
                         self.current += 1
                         self.pos += 1
                         c = self.input[self.current]
+                        if c == '\0':
+                            return Token(Token.Type.END)
                         while c != '\n':
+                            if c == '\0':
+                                return Token(Token.Type.END)
                             self.current += 1
                             self.pos += 1
                             c = self.input[self.current]

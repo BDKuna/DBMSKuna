@@ -77,6 +77,9 @@ class DBManager:
                         index = BPlusTree(table_schema, column)
                     case IndexType.RTREE:
                         index = RTreeIndex(table_schema, column)
+                    case IndexType.GIST:
+                        path = f"{self.tables_path}/{table_schema.table_name}/{table_schema.table_name}_{column_name}"
+                        index = processingDatasetOnInvertedFile(path)
                     case IndexType.NONE:
                         index = NoIndex(table_schema, column)
                     case _:
@@ -550,7 +553,7 @@ class DBManager:
         if index_type == IndexType.ISAM:
             index_structure.build_index()
             test_isam_integrity(index_structure)
-        elif index_type == IndexType.GIST: # TODO construir todo. Se tiene que guardar el record entero o algo para poder saber a que tupla se refiere el output del knn del gist
+        elif index_type == IndexType.GIST:
             path = f"{self.tables_path}/{table_name}/{table_name}_{column_name}"
             index_path = processingDatasetOnInvertedFile(path)
             self.indexes[f"{table_name}.{column_name}"] = index_path

@@ -52,7 +52,7 @@ def processingDatasetOnInvertedFile(path: str) -> str:
     doc_path = path + "_doc.dat"
 
     if os.path.exists(index_path):
-        os.remove(index_path)
+        return index_path
     if os.path.exists(doc_path):
         os.remove(doc_path)
 
