@@ -2,7 +2,7 @@ import os, sys
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if root_path not in sys.path:
     sys.path.append(root_path)
-from parser.scanner import Token, Scanner
+from parserSQL.scanner import Token, Scanner
 from core.conditionschema import BinaryOp, Condition, ConditionColumn, ConditionValue, NotCondition, BinaryCondition, BetweenCondition, BooleanColumn
 from core.schema import TableSchema, DataType, IndexType, SelectSchema, DeleteSchema, ConditionSchema, Column
 from core.dbmanager import DBManager
@@ -518,7 +518,7 @@ class Parser:
             return between_condition
         simple_condition = BinaryCondition()
         simple_condition.left = ConditionColumn(column_name)
-        if not (self.match(Token.Type.LT) or self.match(Token.Type.GT) or self.match(Token.Type.LE) or self.match(Token.Type.GE) or self.match(Token.Type.EQ) or self.match(Token.Type.NEQ) or self.match(Token.Type.WITHIN) or self.match(Token.Type.KNN)):
+        if not (self.match(Token.Type.LT) or self.match(Token.Type.GT) or self.match(Token.Type.LE) or self.match(Token.Type.GE) or self.match(Token.Type.EQ) or self.match(Token.Type.NEQ) or self.match(Token.Type.WITHIN) or self.match(Token.Type.KNN) or self.match(Token.Type.KNNTEXT) or self.match(Token.Type.KNNMULTI)):
             return BooleanColumn(column_name)
         
         match self.previous.type:
@@ -543,6 +543,10 @@ class Parser:
                     self.error("expected RECTANGLE or CIRCLE after WITHIN")
             case Token.Type.KNN:
                 simple_condition.op = BinaryOp.KNN
+            case Token.Type.KNNTEXT:
+                simple_condition.op = BinaryOp.KNNTEXT
+            case Token.Type.KNNMULTI:
+                simple_condition.op = BinaryOp.KNNMULTI
             case _:
                 self.error("unknown conditional operator")
         if simple_condition.op == BinaryOp.WR:
@@ -607,6 +611,14 @@ class Parser:
             if not self.match(Token.Type.RPAR):
                 self.error("expected ')' after k value")
             simple_condition.right = ConditionValue((x, y, k))
+        elif simple_condition.op == BinaryOp.KNNTEXT:
+            if not self.match(Token.Type.STRINGVAL):
+                self.error("expected a string after @@ operation")
+            simple_condition.right = ConditionValue(self.previous.lexema)
+        elif simple_condition.op == BinaryOp.KNNMULTI:
+            if not self.match(Token.Type.STRINGVAL):
+                self.error("expected a string after <-> operation")
+            simple_condition.right = ConditionValue(self.previous.lexema)
         else:
             if self.match(Token.Type.LPAR): # POINT
                 if not self.match(Token.Type.FLOATVAL):
@@ -712,6 +724,10 @@ class Printer:
                     op = "WITHIN CIRCLE"
                 case BinaryOp.KNN:
                     op = "KNN"
+                case BinaryOp.KNNTEXT:
+                    op = "@@"
+                case BinaryOp.KNNMULTI:
+                    op = "<->"
                 case _:
                     self.error("unknown operation")
             return f"{self.condition_column_to_str(condition.left)} {op} {self.value_to_str(condition.right)}"
@@ -805,6 +821,8 @@ class Printer:
                 self.print_line("-> BOOL")
             case DataType.POINT:
                 self.print_line("-> POINT")
+            case DataType.TEXT:
+                self.print_line("-> TEXT")
         self.indent -= 2
         if column_def.data_type == DataType.VARCHAR:
             self.print_line("-> Varchar limit:")
@@ -826,6 +844,8 @@ class Printer:
                 self.print_line(f"-> RTREE")
             case IndexType.BRIN:
                 self.print_line(f"-> BRIN")
+            case IndexType.GIST:
+                self.print_line(f"-> GIST")
             case IndexType.NONE:
                 self.print_line(f"-> NONE")
         self.indent -= 2
@@ -891,6 +911,8 @@ class Printer:
                 self.print_line(f"-> RTREE")
             case IndexType.BRIN:
                 self.print_line(f"-> BRIN")
+            case IndexType.GIST:
+                self.print_line(f"-> GIST")
         self.indent -= 2
         self.print_line("-> On columns:")
         self.indent += 2
@@ -997,7 +1019,6 @@ def execute_sql(sql:str):
         sql_parse = parser.parse()
     except ParseError as e:
         return None, str(e)
-
     try:
         interpreter = Interpreter()
         return interpreter.interpret(sql_parse)  # (result, message)
@@ -1017,3 +1038,9 @@ def print_sql(sql: str):
         print(printer.print(sql_parse))
     except RuntimeError as e:
         return None, str(e)
+    
+if __name__ == '__main__':
+    with open('input.sql', 'r', encoding='utf-8') as f:
+        sql = f.read()
+    result = execute_sql(sql)
+    print(result)

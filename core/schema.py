@@ -83,6 +83,8 @@ class TableSchema:
             case IndexType.BRIN:
                 pass
                 # BRIN(table_schema, column)
+            case IndexType.GIST:
+                return None
             case IndexType.NONE:
                 return None
             case _:

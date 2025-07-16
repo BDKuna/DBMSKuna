@@ -29,6 +29,9 @@ class Record:
 				packed.append(val[1])
 			elif col.data_type == DataType.VARCHAR:
 				packed.append(utils.pad_str(val, col.varchar_length))
+			elif col.data_type == DataType.TEXT:
+				packed.append(val[0])
+				packed.append(val[1])
 			else:
 				packed.append(val)
 		return struct.pack(self.format, *packed)
@@ -52,6 +55,11 @@ class Record:
 				x = round(float(values[i]), 6)
 				y = round(float(values[i+1]), 6)
 				final_values.append((x, y))
+				i += 2
+			elif col.data_type == DataType.TEXT:
+				pos = int(values[i])
+				length = int(values[i+1])
+				final_values.append((pos, length))
 				i += 2
 			else:
 				final_values.append(values[i])

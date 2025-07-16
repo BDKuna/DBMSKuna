@@ -17,6 +17,8 @@ def calculate_record_format(columns: list[Column]):
             fmt += "?"
         elif col.data_type == DataType.POINT:
             fmt += "ff"
+        elif col.data_type == DataType.TEXT:
+            fmt += "ii"
         else:
             raise NotImplementedError(f"Unsupported type {col.data_type}")
     return fmt
@@ -41,8 +43,6 @@ def get_data_type(value) -> DataType:
         if len(value) == 2:
             if isinstance(value[1], float):
                 return DataType.POINT
-            if isinstance(value[1], str):
-                return "text_knn"
 
 def get_empty_value(column: Column):
     if column.data_type == DataType.INT:
@@ -91,7 +91,9 @@ def calculate_column_format(column: Column)->str:
     elif column.data_type == DataType.BOOL:
         return "?"
     elif column.data_type == DataType.POINT:
-            fmt += "ff"
+        return "ff"
+    elif column.data_type == DataType.TEXT:
+        return "ii"
     else:
         raise NotImplementedError(f"Unsupported type {column.data_type}")
 

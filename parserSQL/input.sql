@@ -87,70 +87,28 @@ WHERE coord KNN (3.0, 2.0, 3)
 
 DROP INDEX idx_test2_coord ON test2;
 */
+DROP TABLE IF EXISTS text_test;
 
-DROP TABLE test5;
-
-CREATE TABLE test5 (
-  col1 VARCHAR(20) PRIMARY KEY INDEX HASH,
-  col2 INT INDEX AVL,
-  coord POINT INDEX RTREE
+CREATE TABLE text_test (
+  id INT PRIMARY KEY INDEX HASH,
+  titulo VARCHAR(20),
+  contenido TEXT
 );
 
-INSERT INTO test5 VALUES ('A', 10, (1.0, 2.0));
+INSERT INTO text_test VALUES (1, 'texto_1', 'Normal Attack
+Performs up to 5 consecutive spear strikes.');
+INSERT INTO text_test VALUES (2, 'texto_2', 'Charged Attack
+Consumes a certain amount of Stamina to lunge forward, dealing damage to opponents along the way.
+');
+INSERT INTO text_test VALUES (3, 'texto_3', 'Plunging Attack
+Plunges from mid-air to strike the ground below, damaging opponents along the path and dealing AoE DMG upon impact.');
+INSERT INTO text_test VALUES (4, 'texto_4', 'Summons Guoba, who will continuously breathe fire at opponents, dealing AoE Pyro DMG.');
+INSERT INTO text_test VALUES (5, 'texto_5', 'Displaying her mastery over both fire and polearms, Xiangling sends a Pyronado whirling around her.
+The Pyronado will move with your character for the ability s duration, dealing Pyro DMG to all opponents in its path.');
+INSERT INTO text_test VALUES (6, 'texto_6', 'Increases the flame range of Guoba by 20%.');
+INSERT INTO text_test VALUES (7, 'texto_7', 'When Guoba Attack s effect ends, Guoba leaves a chili pepper on the spot where it disappeared. Picking up a chili pepper increases ATK by 10% for 10s.');
+INSERT INTO text_test VALUES (8, 'texto_8', 'When Xiangling cooks an ATK-boosting dish perfectly, she has a 12% chance to receive double the product.');
 
-CREATE TABLE lugares (
-  id INT PRIMARY KEY INDEX BTREE,
-  ubicacion POINT INDEX RTREE,
-  nombre VARCHAR(100)
-);
+CREATE INDEX idx_gist ON text_test USING GIST (contenido);
 
-INSERT INTO lugares VALUES
-  (1, (12.046374, 77.042793), 'Plaza Mayor');
-INSERT INTO lugares VALUES
-  (2, (12.043180, 77.028240), 'Miraflores');
-INSERT INTO lugares VALUES
-  (3, (12.120000, 77.030000), 'Barranco');
-
-SELECT * FROM lugares
-WHERE ubicacion WITHIN RECTANGLE (12.0, 77.0, 13.0, 78.0);
-
-SELECT * FROM lugares
-WHERE ubicacion WITHIN CIRCLE (12.05, 77.03, 0.02);
-
-SELECT id, nombre FROM lugares
-WHERE ubicacion KNN (12.05, 77.04, 2);
-
-INSERT INTO test5 VALUES ('B', 20, (3.5, 1.5));
-
-INSERT INTO test5 VALUES ('C', 30, (5.0, 5.0));
-
-INSERT INTO test5 VALUES ('D', 40, (2.2, 3.8));
-
-INSERT INTO test5 VALUES ('E', 50, (4.4, 0.9));
-
-/*
-SELECT col1, col2, coord
-FROM test5
-WHERE coord WITHIN RECTANGLE (4.0, 4.0, 6.0, 6.0)
-OR
-coord WITHIN CIRCLE (2.0, 2.0, 2.0);
-*/
-
-SELECT col1, col2, coord
-FROM test5
-WHERE coord KNN (3.0, 2.0, 1);
-
-
-
-CREATE TABLE basic(
-  id int PRIMARY KEY,
-  value float index hash,
-  label varchar(20) index hash
-)
-
-CREATE TABLE basic2(
-  id int PRIMARY KEY,
-  value float,
-  label varchar(20),
-  puntos POINT INDEX RTREE
-)
+SELECT * FROM text_test WHERE contenido @@ 'Guoba Pyro DMG';

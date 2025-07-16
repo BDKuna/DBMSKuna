@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from indexes.invertedindex import BUCKET_LIMIT, BType, DocumentFile, InvertedFile
 from preprocessing.text_utils import bagOfWords
-
+from core.text_file import TextFile
 
 class TextIndexer:
     """Utility to build an inverted index from a CSV file."""
@@ -45,11 +45,11 @@ class TextIndexer:
         self._flush()
 
 
-def processingDatasetOnInvertedFile(csv_path: str, column: str) -> str:
+def processingDatasetOnInvertedFile(path: str) -> str:
     """Process a CSV and create inverted index files."""
 
-    index_path = csv_path[:-4] + "_inv.dat"
-    doc_path = csv_path[:-4] + "_doc.dat"
+    index_path = path + "_inv.dat"
+    doc_path = path + "_doc.dat"
 
     if os.path.exists(index_path):
         os.remove(index_path)
@@ -58,14 +58,12 @@ def processingDatasetOnInvertedFile(csv_path: str, column: str) -> str:
 
     indexer = TextIndexer(index_path, doc_path)
 
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for idx, row in enumerate(reader):
-            if idx % 1000 == 0:
-                print(f"Processing {idx} text")
-            #if idx == 3000 : break
-            doc_id = f"t-{idx}"
-            indexer.add_document(doc_id, row[column])
+    texts = TextFile(path).read_all()
+
+    for idx, text in enumerate(texts):
+        if idx % 1000 == 0:
+            print(f"Processing {idx} text")
+        indexer.add_document(str(idx), text)
 
     indexer.finalize()
     return index_path

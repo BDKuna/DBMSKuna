@@ -21,6 +21,9 @@ class NoIndex:
 	
 	def getAll(self) -> list[int]:
 		pass
+
+	def delete(self, val):
+		pass
 	
 	def search(self, key) -> list[int]:
 		record_file = RecordFile(self.schema)

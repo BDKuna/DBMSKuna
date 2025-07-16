@@ -7,8 +7,8 @@ class Token:
             CREATE, TABLE, DROP, AND, OR, NOT, AS, ORDER, BY, LIMIT, ID, STAR, BETWEEN,
             EQ, NEQ, LT, GT, LE, GE, COMMA, DOT, SEMICOLON, NUMVAL, FLOATVAL, STRINGVAL,
             BOOLVAL, PRIMARY, KEY, DATATYPE, INDEX, ON, USING, INDEXTYPE, ERR, END, 
-            WITHIN, RECTANGLE, CIRCLE, KNN, ASC, DESC, IF, EXISTS
-        ) = range(54)
+            WITHIN, RECTANGLE, CIRCLE, KNN, ASC, DESC, IF, EXISTS, KNNTEXT, KNNMULTI
+        ) = range(56)
 
     token_names = [
         "LPAR", "RPAR", "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES",
@@ -17,7 +17,7 @@ class Token:
         "GT", "LE", "GE", "COMMA", "DOT", "SEMICOLON", "NUMVAL", "FLOATVAL", "STRINGVAL",
         "BOOLVAL", "PRIMARY", "KEY", "DATATYPE", "INDEX", "ON", "USING", "INDEXTYPE",
         "ERR", "END", "WITHIN", "RECTANGLE", "CIRCLE", "KNN", "ASC", "DESC", "IF",
-        "EXISTS"
+        "EXISTS", "KNNTEXT", "KNNMULTI"
     ]
 
     def __init__(self, token_type, lexema=""):
@@ -138,6 +138,18 @@ class Scanner:
                         self.current += 1
                         self.pos += 1
                         return Token(Token.Type.NEQ)
+                    elif c == '-':
+                        self.current += 1
+                        self.pos += 1
+                        c = self.input[self.current]
+                        if c == '>':
+                            self.current += 1
+                            self.pos += 1
+                            return Token(Token.Type.KNNMULTI)
+                        else:
+                            self.current -= 1
+                            self.pos -= 1
+                            return Token(Token.Type.LT)
                     else:
                         return Token(Token.Type.LT)
                 elif c == '>':
@@ -176,6 +188,16 @@ class Scanner:
                     self.current += 1
                     self.pos += 1
                     return Token(Token.Type.SEMICOLON)
+                elif c == '@':
+                    self.current += 1
+                    self.pos += 1
+                    c = self.input[self.current]
+                    if c == '@':
+                        self.current += 1
+                        self.pos += 1
+                        return Token(Token.Type.KNNTEXT)
+                    else:
+                        return Token(Token.Type.ERR)
                 elif c.isdigit():
                     state = 1
                 elif c == "'":
