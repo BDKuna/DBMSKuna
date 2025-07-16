@@ -49,6 +49,7 @@ class Scanner:
         state = 0
         self.start_lexema()
         c = self.input[self.current]
+        string_val = ''
         while True:
             if state == 0:
                 c = self.input[self.current]
@@ -233,12 +234,20 @@ class Scanner:
                 self.current += 1
                 self.pos += 1
                 c = self.input[self.current]
-                if c == "'":
+                if c == '\\':
+                    c = self.input[self.current + 1]
+                    if c == "'":
+                        self.current += 1
+                        self.pos += 1
+                    string_val += self.input[self.current]
+                elif c == "'":
                     self.current += 1
                     self.pos += 1
-                    return Token(Token.Type.STRINGVAL, self.get_lexema()[1:-1])
+                    return Token(Token.Type.STRINGVAL, string_val)
                 elif c == '\0':
                     return Token(Token.Type.ERR)
+                else:
+                    string_val += self.input[self.current]
 
             elif state == 4:
                 self.current += 1

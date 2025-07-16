@@ -214,7 +214,6 @@ class DBManager:
             self.save_table_schema(table_schema, path)
 
             for column in table_schema.columns:
-                print(column.index_type)
                 self.get_index(table_schema, column.name)
                 if column.data_type == DataType.TEXT:
                     TextFile(f"{path}/{table_schema.table_name}_{column.name}").initialize()
@@ -223,6 +222,9 @@ class DBManager:
 
     def drop_table(self, table_name : str, if_exists : bool = False) -> None:
         path = f"{self.tables_path}/{table_name}"
+        table = self.get_table_schema(table_name)
+        for column in table.columns:
+            self.indexes.pop(f"{table_name}.{column.name}", None)
         if os.path.exists(path):
             shutil.rmtree(path)
         else:
@@ -391,7 +393,7 @@ class DBManager:
                             self.knn_result = [(int(i[0]), i[1]) for i in result]
                             return self.list_to_bitmap([int(i[0]) for i in result])
                         case BinaryOp.KNNMULTI:
-                            return
+                            self.error("<-> operator not supported")
                         case _:
                             self.error("operation not supported for TEXT type")
                 if column.data_type != utils.get_data_type(condition.right.value):
@@ -575,6 +577,7 @@ class DBManager:
                     self.error("Cannot drop index of type NoIndex")
                 if column.is_primary:
                     self.error("Cannot drop the primary key's index")
+                self.indexes.pop(f"{table_name}.{column.name}", None)
                 index.clear()
                 column.index_type = IndexType.NONE
                 column.index_name = None
