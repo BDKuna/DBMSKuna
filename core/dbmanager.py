@@ -7,7 +7,7 @@ if root_path not in sys.path:
     sys.path.append(root_path)
 
 from core.conditionschema import Condition, BinaryCondition, BetweenCondition, NotCondition, BooleanColumn, ConditionColumn, ConditionValue, ConditionSchema, BinaryOp
-from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema
+from core.schema import DataType, TableSchema, IndexType, SelectSchema, DeleteSchema, Column
 from core import utils
 from indexes.bplustree import BPlusTree
 from indexes.avltree import AVLTree
@@ -124,14 +124,16 @@ class DBManager:
     def bitmap_difference(self, a : bitarray, b : bitarray) -> bitarray:
         return self.bitmap_and(a, self.bitmap_not(b))
     
-    def retrieve_data(self, table_schema : TableSchema, bitmap : bitarray, limit = None) -> list[Record]:
+    def retrieve_data(self, table_schema : TableSchema, bitmap : bitarray, limit = None) -> tuple[list[Record], list[int]]:
         ids = self.bitmap_to_list(bitmap)
+        final_ids = []
         records = []
         record_file = RecordFile(table_schema)
         count = 0
         for id in ids:
             if limit != None and count >= limit:
                 break
+            final_ids.append(id)
             records.append(record_file.read(id))
             count += 1
         if bitmap[0]:
@@ -139,11 +141,12 @@ class DBManager:
             while id < record_file.max_id():
                 if limit != None and count >= limit:
                     break
+                final_ids.append(id)
                 record = record_file.read(id)
                 records.append(record)
                 id += 1
                 count += 1
-        return records
+        return (records, final_ids)
     
     def retrieve_data_and_delete(self, table_schema : TableSchema, bitmap : bitarray) -> list[Record]:
         ids = self.bitmap_to_list(bitmap)
@@ -243,45 +246,62 @@ class DBManager:
                 self.error("limit must be positive")
 
         self.limit = select_schema.limit
-
+        self.knn = False
         if select_schema.condition_schema.condition:
             bitmap = self.select_condition(table, select_schema.condition_schema.condition)
         else:
             bitmap = bitarray(1)
             bitmap.setall(1)
-        if select_schema.order_by == None:
-            result = self.retrieve_data(table, bitmap, select_schema.limit)
+        
+        if self.knn:
+            (result, ids) = self.retrieve_data(table, bitmap)
+            id_map = dict(zip(ids, result))
+            reordered_result = []
+            for id, score in self.knn_result:
+                if id in id_map:
+                    new_record = id_map[id]
+                    new_record.values.append(score)
+                    reordered_result.append(new_record)
+            result = reordered_result
         else:
-            result = self.retrieve_data(table, bitmap)
-            for i, column in enumerate(column_names):
-                if select_schema.order_by == column:
-                    ordered_column_num = i
-                    break
-            if select_schema.limit != None:
-                if select_schema.limit > len(result) / 2:
-                    if select_schema.asc:
-                        result = sorted(result, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
-                    else:
-                        result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
-                else:
-                    if select_schema.asc:
-                        result = heapq.nsmallest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
-                    else:
-                        result = heapq.nlargest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
+            if select_schema.order_by == None:
+                (result, _) = self.retrieve_data(table, bitmap, select_schema.limit)
             else:
-                if select_schema.asc:
-                    result = sorted(result, key=lambda x : x.values[ordered_column_num])
+                (result, _) = self.retrieve_data(table, bitmap)
+                for i, column in enumerate(column_names):
+                    if select_schema.order_by == column:
+                        ordered_column_num = i
+                        break
+                if select_schema.limit != None:
+                    if select_schema.limit > len(result) / 2:
+                        if select_schema.asc:
+                            result = sorted(result, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
+                        else:
+                            result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])[:select_schema.limit]
+                    else:
+                        if select_schema.asc:
+                            result = heapq.nsmallest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
+                        else:
+                            result = heapq.nlargest(select_schema.limit, result, key=lambda x : x.values[ordered_column_num])
                 else:
-                    result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])
-        columns = []
+                    if select_schema.asc:
+                        result = sorted(result, key=lambda x : x.values[ordered_column_num])
+                    else:
+                        result = sorted(result, reverse=True, key=lambda x : x.values[ordered_column_num])
+        selected_columns = []
         if select_schema.all:
-            columns = table.columns
+            selected_columns = table.columns
         else:
             for name in select_schema.column_list:
                 for column in table.columns:
                     if column.name == name:
-                        columns.append(column)
-        
+                        selected_columns.append(column)
+        if self.knn:
+            new_column = Column('score', DataType.FLOAT)
+            selected_columns.append(new_column)
+            table.columns.append(new_column)
+            select_schema.column_list.append('score')
+            column_names.append('score')
         if not select_schema.all:
             for record in result:
                 value_map = {col.name: val for col, val in zip(table.columns, record.values)}
@@ -294,7 +314,7 @@ class DBManager:
                         if isinstance(value[0], float):
                             record.values[i] = str(value)
                         else:
-                            path = f"{self.tables_path}/{table.table_name}/{table.table_name}_{columns[i].name}"
+                            path = f"{self.tables_path}/{table.table_name}/{table.table_name}_{selected_columns[i].name}"
                             record.values[i] = TextFile(path).read(value[0], value[1])
                 final_result.append(record.values)
         return {
@@ -360,11 +380,12 @@ class DBManager:
                 if column.data_type == DataType.TEXT:
                     if utils.get_data_type(condition.right.value) != DataType.VARCHAR:
                         self.error(f"value '{condition.right.value}' is not of data type {column.data_type}")
+                    self.knn = True
                     match op:
                         case BinaryOp.KNNTEXT:
                             index_path = self.get_index(table_schema, condition.left.column_name)
                             result = InvertedIndex(index_path).searchQuery(condition.right.value, self.limit)
-                            # print(result)
+                            self.knn_result = [(int(i[0]), i[1]) for i in result]
                             return self.list_to_bitmap([int(i[0]) for i in result])
                         case BinaryOp.KNNMULTI:
                             return
