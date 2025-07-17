@@ -16,6 +16,7 @@ import psycopg2
 
 from indexes.invertedindex import InvertedIndex
 from preprocessing.text import processingDatasetOnInvertedFile
+from preprocessing.text_utils import bagOfWords
 from core.text_file import TextFile
 
 # Reuse preprocessing files if they already exist
@@ -32,19 +33,26 @@ COMPARE_BOTH_MODES = True
 CUSTOM_SIZES: list[int] | None = []
 JSON_FILE = "benchmark_results_full.json"
 
-# List of tsquery functions to benchmark
-QUERY_FUNCS = [
-    "plainto_tsquery",
-    "websearch_to_tsquery",
-] if COMPARE_BOTH_MODES else [
-    "websearch_to_tsquery" if USE_WEBSEARCH else "plainto_tsquery"
-]
+# List of tsquery functions to benchmark. A custom mode ``custom_bow``
+# converts the query using ``bagOfWords`` and joins the tokens with
+# ``|`` to approximate the inverted index behaviour.
+if COMPARE_BOTH_MODES:
+    QUERY_FUNCS = [
+        "plainto_tsquery",
+        "websearch_to_tsquery",
+        "custom_bow",
+    ]
+else:
+    QUERY_FUNCS = [
+        "websearch_to_tsquery" if USE_WEBSEARCH else "plainto_tsquery",
+        "custom_bow",
+    ]
 
 
 # Dataset sizes used for each benchmark iteration. These will be
 # trimmed to the dataset length at runtime so they never exceed the
 # number of available rows.
-DEFAULT_SIZES = [1000, 5000, 10000, 20000, 40000, 80000, 160000]
+DEFAULT_SIZES = [1000, 2000, 4000, 6000, 8000, 10000, 14000]
 
 # Fixed queries for measuring search performance
 QUERIES = [
@@ -77,7 +85,7 @@ ALL_QUERIES = QUERIES + [
 ]
 
 # Sizes used when running the optional GiST experiment
-GIST_SIZES = [16000, 64000]
+GIST_SIZES = [1000, 2000, 4000, 6000, 8000, 10000, 14000]
 RUN_GIST = True
 
 # Path to the full dataset
@@ -91,10 +99,19 @@ TMP_DIR = Path(".")
 def dataset_row_count(path: Path) -> int:
     """Return the number of documents available in ``path``."""
     with open(path, newline="", encoding="utf-8") as f:
-        return sum(1 for _ in f) - 1
+        # ``csv.reader`` correctly handles newlines within quoted fields so
+        # counting rows this way yields the true number of records.  Subtract
+        # one to exclude the header row.
+        return sum(1 for _ in csv.reader(f)) - 1
 
 
 DATASET_ROWS = dataset_row_count(DATASET_PATH)
+
+
+def bow_tsquery(text: str) -> str:
+    """Return a tsquery string using bag-of-words tokenization."""
+    tokens = bagOfWords(text).keys()
+    return " | ".join(tokens)
 
 
 def build_sizes() -> list[int]:
@@ -108,6 +125,7 @@ def build_sizes() -> list[int]:
 
 
 SIZES = build_sizes()
+print(SIZES)
 
 # Connection parameters for the PostgreSQL instance
 PG_PARAMS = {
@@ -291,6 +309,9 @@ def benchmark_postgres(
     for q in queries:
         func = query_func
         prepared = q
+        if query_func == "custom_bow":
+            func = "to_tsquery"
+            prepared = bow_tsquery(q)
         total = 0.0
         for _ in range(5):
             cur.execute(
@@ -381,7 +402,12 @@ def main() -> None:
         }
 
         for func in QUERY_FUNCS:
-            label = "web" if func == "websearch_to_tsquery" else "plain"
+            if func == "websearch_to_tsquery":
+                label = "web"
+            elif func == "custom_bow":
+                label = "custom"
+            else:
+                label = "plain"
             if conn:
                 print(f"[{label}] Benchmarking ts_rank with N={n}")
                 pg_time, pg_ids, pg_sims = benchmark_postgres(
@@ -438,6 +464,8 @@ def main() -> None:
 
             exact, jacc, ex_list, jac_list = compute_quality(my_ids, pg_ids)
 
+            print(f"[{label}] Jaccard ts_rank vs MyIndex: {jacc:.3f}")
+
             row = [n, label, my_time, pg_time, pg_cd_time, exact, jacc]
             if gist_time is not None:
                 row.append(gist_time)
@@ -469,6 +497,7 @@ def main() -> None:
                 my_ids,
                 pg_cd_ids,
             )
+            print(f"[{label}] Jaccard ts_rank_cd vs MyIndex: {pgcd_jacc:.3f}")
             m[f"{prefix}ts_rank_cd"] = {
                 "exact_match": pgcd_ex_list,
                 "jaccard": pgcd_jac_list,
@@ -487,6 +516,7 @@ def main() -> None:
                     my_ids,
                     gist_ids,
                 )
+                print(f"[{label}] Jaccard GiST vs MyIndex: {g_jacc:.3f}")
                 m[f"{prefix}GiST"] = {
                     "exact_match": g_ex_list,
                     "jaccard": g_jac_list,
@@ -519,7 +549,12 @@ def main() -> None:
     for row in results:
         n, label = row[0], row[1]
         entry = entry_map[n]
-        prefix = "web_" if label == "web" else "plain_"
+        if label == "web":
+            prefix = "web_"
+        elif label == "custom":
+            prefix = "custom_"
+        else:
+            prefix = "plain_"
 
         ids_short = ",".join(entry["MyIndex"]["ids"][0][:3])
         if len(entry["MyIndex"]["ids"][0]) > 3:
@@ -561,6 +596,38 @@ def main() -> None:
     print_table(headers, table_rows)
     write_csv("benchmark_results.csv", headers, csv_rows)
     save_full_results(full, JSON_FILE)
+
+    # Generate simple runtime comparison plots for each search mode
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    grouped: dict[str, dict[str, list[float]]] = {}
+    for row in results:
+        n, label = row[0], row[1]
+        d = grouped.setdefault(label, {"N": [], "MyIndex": [], "ts_rank": [], "ts_rank_cd": [], "GiST": []})
+        d["N"].append(n)
+        d["MyIndex"].append(row[2])
+        d["ts_rank"].append(row[3])
+        d["ts_rank_cd"].append(row[4])
+        if RUN_GIST and len(row) == 8:
+            d["GiST"].append(row[7])
+
+    for label, d in grouped.items():
+        df = pd.DataFrame(d)
+        plt.figure(figsize=(10, 6))
+        plt.plot(df["N"], df["MyIndex"], label="MyIndex", marker="o")
+        plt.plot(df["N"], df["ts_rank"], label="ts_rank", marker="o")
+        plt.plot(df["N"], df["ts_rank_cd"], label="ts_rank_cd", marker="o")
+        if RUN_GIST and d["GiST"]:
+            plt.plot(df["N"][: len(d["GiST"])], d["GiST"], label="GiST", marker="o")
+        plt.xlabel("Tamaño del Dataset (N)")
+        plt.ylabel("Tiempo de búsqueda (ms)")
+        plt.title(f"Comparación de Tiempos - {label}")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.xticks(df["N"], rotation=45)
+        plt.show()
 
 
 if __name__ == '__main__':
