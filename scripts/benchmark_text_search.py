@@ -15,6 +15,7 @@ import psycopg2
 
 from indexes.invertedindex import InvertedIndex
 from preprocessing.text import processingDatasetOnInvertedFile
+from core.text_file import TextFile
 
 
 # Dataset sizes used for each benchmark iteration
@@ -45,7 +46,7 @@ ALL_QUERIES = QUERIES + [
 
 # Sizes used when running the optional GiST experiment
 GIST_SIZES = [16000, 64000]
-RUN_GIST = False
+RUN_GIST = True
 
 # Path to the full dataset
 DATASET_PATH = Path("datasets/data2/mpst_full_data.csv")
@@ -80,10 +81,23 @@ def create_tmp_csv(n: int) -> Path:
             )
     return tmp_csv
 
+def ensure_text_files(csv_path: Path) -> str:
+    """Generate TextFile data for a CSV if missing."""
+    tf = TextFile(str(csv_path))
+    if not Path(tf.data_path).exists():
+        tf.initialize()
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                tf.write(row["plot_synopsis"])
+    return str(csv_path)
+
+
 
 def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]]]:
     """Build ``InvertedIndex`` and return timing and results for each query."""
     tmp_csv = create_tmp_csv(n)
+    ensure_text_files(tmp_csv)
     index_path = processingDatasetOnInvertedFile(str(tmp_csv))
     idx = InvertedIndex(index_path)
     idx.buildIndex()
@@ -101,15 +115,18 @@ def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]
 
     avg_ms = sum(timings) / len(timings) * 1000
 
-    base = tmp_csv.stem  # sin la extensión .csv
+    base = tmp_csv.name
     inv_dat = tmp_csv.parent / f"{base}_inv.dat"
     doc_dat = tmp_csv.parent / f"{base}_doc.dat"
+    data_dat = tmp_csv.parent / f"{base}_data.dat"
+    lengths_dat = tmp_csv.parent / f"{base}_lengths.dat"
+    extra_lengths = tmp_csv.parent / f"{base}_lengths.dat_lengths.dat"
 
-    for path in (tmp_csv, inv_dat, doc_dat):
+    for path in (tmp_csv, inv_dat, doc_dat, data_dat, lengths_dat, extra_lengths):
         if path.exists():
             path.unlink()
 
-    return avg_ms
+    return avg_ms, results
 
 
 def parse_execution_time(plan_rows: list[tuple[str]]) -> float:
@@ -172,7 +189,11 @@ def benchmark_postgres(
     )
     index_type = "GiST" if use_gist else "GIN"
     cur.execute(
-        f"CREATE INDEX idx_movies_fts ON movies USING {index_type}(document_with_weights)"
+        (
+            "CREATE INDEX idx_movies_fts ON movies USING "
+            f"{index_type}(document_with_weights)"
+
+        )
     )
     conn.commit()
 
