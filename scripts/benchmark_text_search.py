@@ -6,6 +6,7 @@ PostgreSQL: ``ts_rank`` and ``ts_rank_cd``.
 """
 
 import csv
+import json
 import os
 import re
 import time
@@ -17,9 +18,16 @@ from indexes.invertedindex import InvertedIndex
 from preprocessing.text import processingDatasetOnInvertedFile
 from core.text_file import TextFile
 
+# Reuse preprocessing files if they already exist
+REUSE_INDEX = True
+
+# Custom sizes can override the default benchmarking scale
+CUSTOM_SIZES: list[int] | None = []
+JSON_FILE = "benchmark_results_full.json"
+
 
 # Dataset sizes used for each benchmark iteration
-SIZES = [1000, 2000, 4000, 8000, 16000, 32000, 64000]
+SIZES = CUSTOM_SIZES or [1000, 5000, 10000, 20000, 40000, 80000, 160000]
 
 # Fixed queries for measuring search performance
 QUERIES = [
@@ -64,8 +72,11 @@ PG_PARAMS = {
 
 
 def create_tmp_csv(n: int) -> Path:
-    """Create a temporary CSV with the first ``n`` rows of the dataset."""
+    """Create or reuse a temporary CSV with the first ``n`` rows."""
     tmp_csv = TMP_DIR / f"tmp_mpst_{n}.csv"
+    if REUSE_INDEX and tmp_csv.exists():
+        return tmp_csv
+
     with (
         open(DATASET_PATH, newline="", encoding="utf-8") as src,
         open(tmp_csv, "w", newline="", encoding="utf-8") as dst,
@@ -93,14 +104,31 @@ def ensure_text_files(csv_path: Path) -> str:
     return str(csv_path)
 
 
+def cache_index(csv_path: Path) -> str:
+    """Return or build the inverted index for ``csv_path``."""
+    base = str(csv_path)
+    paths = [
+        Path(base + suffix)
+        for suffix in ("_inv.dat", "_doc.dat", "_data.dat", "_lengths.dat")
+    ]
+
+    if REUSE_INDEX and all(p.exists() for p in paths):
+        return paths[0].as_posix()
+
+    ensure_text_files(csv_path)
+    return processingDatasetOnInvertedFile(base)
+
+
 
 def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]]]:
     """Build ``InvertedIndex`` and return timing and results for each query."""
     tmp_csv = create_tmp_csv(n)
-    ensure_text_files(tmp_csv)
-    index_path = processingDatasetOnInvertedFile(str(tmp_csv))
+    index_path = cache_index(tmp_csv)
     idx = InvertedIndex(index_path)
-    idx.buildIndex()
+    built_flag = Path(index_path + ".built")
+    if not (REUSE_INDEX and built_flag.exists()):
+        idx.buildIndex()
+        built_flag.touch()
 
     timings: list[float] = []
     results: list[list[str]] = []
@@ -115,16 +143,26 @@ def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]
 
     avg_ms = sum(timings) / len(timings) * 1000
 
-    base = tmp_csv.name
-    inv_dat = tmp_csv.parent / f"{base}_inv.dat"
-    doc_dat = tmp_csv.parent / f"{base}_doc.dat"
-    data_dat = tmp_csv.parent / f"{base}_data.dat"
-    lengths_dat = tmp_csv.parent / f"{base}_lengths.dat"
-    extra_lengths = tmp_csv.parent / f"{base}_lengths.dat_lengths.dat"
+    if not REUSE_INDEX:
+        base = tmp_csv.name
+        inv_dat = tmp_csv.parent / f"{base}_inv.dat"
+        doc_dat = tmp_csv.parent / f"{base}_doc.dat"
+        data_dat = tmp_csv.parent / f"{base}_data.dat"
+        lengths_dat = tmp_csv.parent / f"{base}_lengths.dat"
+        extra_lengths = tmp_csv.parent / (
+            f"{base}_lengths.dat_lengths.dat"
+        )
 
-    for path in (tmp_csv, inv_dat, doc_dat, data_dat, lengths_dat, extra_lengths):
-        if path.exists():
-            path.unlink()
+        for path in (
+            tmp_csv,
+            inv_dat,
+            doc_dat,
+            data_dat,
+            lengths_dat,
+            extra_lengths,
+        ):
+            if path.exists():
+                path.unlink()
 
     return avg_ms, results
 
@@ -234,44 +272,98 @@ def benchmark_postgres(
     avg_ms = sum(timings) / len(timings)
 
     cur.close()
-    if tmp_csv.exists():
+    if not REUSE_INDEX and tmp_csv.exists():
         os.remove(tmp_csv)
 
     return avg_ms, results
 
 
+def save_full_results(data: list[dict], path: str) -> None:
+    """Persist the extended benchmark results."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
 def main() -> None:
     """Run benchmarks for ``InvertedIndex`` and PostgreSQL."""
     results: list[list[float | int]] = []
+    full: list[dict] = []
 
-    conn = psycopg2.connect(**PG_PARAMS)
-    conn.autocommit = True
+    try:
+        conn = psycopg2.connect(**PG_PARAMS)
+        conn.autocommit = True
+    except Exception as exc:
+        print(f"PostgreSQL connection failed: {exc}")
+        conn = None
     for n in SIZES:
         print(f"Benchmarking MyIndex with N={n}")
         my_time, my_res = benchmark_myindex(n, ALL_QUERIES)
 
-        print(f"Benchmarking PostgreSQL ts_rank with N={n}")
-        pg_time, pg_res = benchmark_postgres(n, ALL_QUERIES, conn)
+        if conn:
+            print(f"Benchmarking PostgreSQL ts_rank with N={n}")
+            pg_time, pg_res = benchmark_postgres(n, ALL_QUERIES, conn)
 
-        print(f"Benchmarking PostgreSQL ts_rank_cd with N={n}")
-        pg_cd_time, _ = benchmark_postgres(
-            n, ALL_QUERIES, conn, ranking="ts_rank_cd"
-        )
+            print(f"Benchmarking PostgreSQL ts_rank_cd with N={n}")
+            pg_cd_time, pg_cd_res = benchmark_postgres(
+                n, ALL_QUERIES, conn, ranking="ts_rank_cd"
+            )
+        else:
+            pg_time, pg_res = 0.0, [[] for _ in ALL_QUERIES]
+            pg_cd_time, pg_cd_res = 0.0, [[] for _ in ALL_QUERIES]
+
+        gist_time = None
+        gist_res: list[list[str]] | None = None
+        if conn and RUN_GIST and n in GIST_SIZES:
+            print(f"Benchmarking PostgreSQL GiST ts_rank with N={n}")
+            gist_time, gist_res = benchmark_postgres(
+                n, ALL_QUERIES, conn, use_gist=True
+            )
+
+        for q_i, q in enumerate(ALL_QUERIES):
+            print(f"- Query '{q}':")
+            print(f"  MyIndex: {my_res[q_i]}")
+            print(f"  ts_rank: {pg_res[q_i]}")
+            print(f"  ts_rank_cd: {pg_cd_res[q_i]}")
+            if gist_res:
+                print(f"  GiST: {gist_res[q_i]}")
 
         exact, jacc = compute_quality(my_res, pg_res)
 
         row = [n, my_time, pg_time, pg_cd_time, exact, jacc]
-
-        if RUN_GIST and n in GIST_SIZES:
-            print(f"Benchmarking PostgreSQL GiST ts_rank with N={n}")
-            gist_time, _ = benchmark_postgres(
-                n, ALL_QUERIES, conn, use_gist=True
-            )
+        if gist_time is not None:
             row.append(gist_time)
 
         results.append(row)
 
-    conn.close()
+        full.append(
+            {
+                "N": n,
+                "MyIndex": {
+                    "time_ms": my_time,
+                    "results": my_res,
+                },
+                "ts_rank": {
+                    "time_ms": pg_time,
+                    "results": pg_res,
+                },
+                "ts_rank_cd": {
+                    "time_ms": pg_cd_time,
+                    "results": pg_cd_res,
+                },
+                "metrics": {
+                    "exact_match": exact,
+                    "jaccard": jacc,
+                },
+            }
+        )
+        if gist_time is not None and gist_res is not None:
+            full[-1]["GiST"] = {
+                "time_ms": gist_time,
+                "results": gist_res,
+            }
+
+    if conn:
+        conn.close()
 
     headers = [
         "N",
@@ -283,6 +375,7 @@ def main() -> None:
     ]
     if RUN_GIST:
         headers.append("PostgreSQL_ts_rank_GiST_ms")
+    headers.extend(["IDs_sample", "JSON"])
 
     format_header = (
         f"| {'N':<6}| {'MyIndex_ms':>14} | {'PostgreSQL_ts_rank_ms':>24} | "
@@ -290,22 +383,29 @@ def main() -> None:
     )
     if RUN_GIST:
         format_header += " | {:>27}".format("PostgreSQL_ts_rank_GiST_ms")
-    format_header += " |"
+    format_header += " | {:>10} | {:>8} |"
     print(format_header)
 
-    separator = "|-----|--------------:|------------------------:|-------------------------:|-----------:|---------:"  # noqa: E501
+    separator = (
+        "|-----|--------------:|------------------------:|"
+        "---------------------------:|-----------:|---------:"
+    )  # noqa: E501
     if RUN_GIST:
         separator += "|-------------------------:|"
+    separator += "|------------|------|"
     print(separator)
 
-    for row in results:
+    for idx, row in enumerate(results):
+        ids_snippet = ",".join(full[idx]["MyIndex"]["results"][0][:3])
+        if len(full[idx]["MyIndex"]["results"][0]) > 3:
+            ids_snippet += "..."
         line = (
             f"| {row[0]:<4}| {row[1]:14.3f} | {row[2]:24.3f} | {row[3]:27.3f} | "
             f"{row[4]:10.2f} | {row[5]:8.2f}"
         )
         if RUN_GIST and len(row) == 7:
             line += f" | {row[6]:27.3f}"
-        line += " |"
+        line += f" | {ids_snippet:<10} | {JSON_FILE:<8} |"
         print(line)
 
     with open("benchmark_results.csv", "w", newline="") as f:
@@ -313,6 +413,8 @@ def main() -> None:
         writer.writerow(headers)
         for row in results:
             writer.writerow([f"{v:.3f}" if isinstance(v, float) else v for v in row])
+
+    save_full_results(full, JSON_FILE)
 
 
 if __name__ == '__main__':
