@@ -34,6 +34,7 @@ COMPARE_BOTH_MODES = True
 # Custom sizes can override the default benchmarking scale
 CUSTOM_SIZES: list[int] | None = []
 JSON_FILE = "benchmark_results_full.json"
+PLOTS_DIR = "benchmark_plots"
 
 # Different top-k values used when computing Jaccard metrics
 TOP_K_VALUES = [5, 10, 20, 50, 100]
@@ -389,10 +390,200 @@ def write_csv(path: str, headers: list[str], rows: list[list[str]]) -> None:
         writer.writerows(rows)
 
 
+def generate_outputs(
+    results: list[list[float | int]],
+    full: list[dict],
+    entry_map: dict[int, dict],
+    save_files: bool = True,
+    output_dir: str = PLOTS_DIR,
+) -> None:
+    """Print tables, optionally save files and store plot images."""
+
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    headers = [
+        "N",
+        "Mode",
+        "MyIndex_ms",
+        "PostgreSQL_ts_rank_ms",
+        "PostgreSQL_ts_rank_cd_ms",
+        "ExactMatch",
+        "Jaccard",
+    ]
+    if RUN_GIST:
+        headers.append("PostgreSQL_ts_rank_GiST_ms")
+    headers.extend(["IDs_sample", "MyIndex_sim", "Pg_sim", "JSON"])
+
+    table_rows: list[list[str]] = []
+    csv_rows: list[list[str]] = []
+
+    for row in results:
+        n, label = row[0], row[1]
+        entry = entry_map[n]
+        if label == "web":
+            prefix = "web_"
+        elif label == "custom":
+            prefix = "custom_"
+        else:
+            prefix = "plain_"
+
+        ids_short = ",".join(entry["MyIndex"]["ids"][0][:3])
+        if len(entry["MyIndex"]["ids"][0]) > 3:
+            ids_short += "..."
+        mi_sim_short = ",".join(
+            f"{s:.2f}" for s in entry["MyIndex"]["sims"][0][:3]
+        )
+        pg_sim_short = ",".join(
+            f"{s:.2f}" for s in entry[f"{prefix}ts_rank"]["sims"][0][:3]
+        )
+
+        row_str = [
+            str(n),
+            label,
+            f"{row[2]:.3f}",
+            f"{row[3]:.3f}",
+            f"{row[4]:.3f}",
+            f"{row[5]:.3f}",
+            f"{row[6]:.3f}",
+        ]
+        csv_row = row_str.copy()
+        if RUN_GIST:
+            if len(row) == 8:
+                row_str.append(f"{row[7]:.3f}")
+                csv_row.append(f"{row[7]:.3f}")
+            else:
+                row_str.append("")
+                csv_row.append("")
+
+        row_str.extend([ids_short, mi_sim_short, pg_sim_short, JSON_FILE])
+        table_rows.append(row_str)
+
+        ids_full = ",".join(entry["MyIndex"]["ids"][0][:5])
+        mi_sim_full = ",".join(
+            f"{s:.4f}" for s in entry["MyIndex"]["sims"][0][:5]
+        )
+        pg_sim_full = ",".join(
+            f"{s:.4f}" for s in entry[f"{prefix}ts_rank"]["sims"][0][:5]
+        )
+        csv_row.extend([ids_full, mi_sim_full, pg_sim_full, JSON_FILE])
+        csv_rows.append(csv_row)
+
+    print_table(headers, table_rows)
+    if save_files:
+        write_csv("benchmark_results.csv", headers, csv_rows)
+        save_full_results(full, JSON_FILE)
+
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    grouped: dict[str, dict[str, list[float]]] = {}
+    for row in results:
+        n, label = row[0], row[1]
+        d = grouped.setdefault(label, {"N": [], "MyIndex": [], "ts_rank": [], "ts_rank_cd": [], "GiST": []})
+        d["N"].append(n)
+        d["MyIndex"].append(row[2])
+        d["ts_rank"].append(row[3])
+        d["ts_rank_cd"].append(row[4])
+        if RUN_GIST and len(row) == 8:
+            d["GiST"].append(row[7])
+
+    for label, d in grouped.items():
+        max_len = len(d["N"])
+        for key in d:
+            if len(d[key]) < max_len:
+                d[key].extend([None] * (max_len - len(d[key])))
+        df = pd.DataFrame(d)
+        plt.figure(figsize=(10, 6))
+        plt.plot(df["N"], df["MyIndex"], label="MyIndex", marker="o")
+        plt.plot(df["N"], df["ts_rank"], label="ts_rank", marker="o")
+        plt.plot(df["N"], df["ts_rank_cd"], label="ts_rank_cd", marker="o")
+        if RUN_GIST and any(d["GiST"]):
+            plt.plot(df["N"], d["GiST"], label="GiST", marker="o")
+        plt.xlabel("Tamaño del Dataset (N)")
+        plt.ylabel("Tiempo de búsqueda (ms)")
+        plt.title(f"Comparación de Tiempos - {label}")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.xticks(df["N"], rotation=45)
+        plt.savefig(out_path / f"time_{label}.png")
+        plt.close()
+
+    n_values = [entry["N"] for entry in full]
+    for label in grouped.keys():
+        if label == "web":
+            prefix = "web_"
+        elif label == "custom":
+            prefix = "custom_"
+        else:
+            prefix = "plain_"
+        for k in TOP_K_VALUES:
+            key = str(k)
+            vals = [entry["metrics"][f"{prefix}ts_rank"][key]["jacc_avg"] for entry in full]
+            plt.figure(figsize=(10, 6))
+            plt.plot(n_values, vals, marker="o")
+            plt.xlabel("Tamaño del Dataset (N)")
+            plt.ylabel("Jaccard")
+            plt.title(f"Jaccard Promedio Top {k} - {label}")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.xticks(n_values, rotation=45)
+            plt.savefig(out_path / f"jaccard_avg_{label}_top{k}.png")
+            plt.close()
+
+        num_q = len(ALL_QUERIES)
+        for q_i in range(num_q):
+            plt.figure(figsize=(10, 6))
+            for k in TOP_K_VALUES:
+                key = str(k)
+                vals = [
+                    entry["metrics"][f"{prefix}ts_rank"][key]["jacc_list"][q_i]
+                    for entry in full
+                ]
+                plt.plot(n_values, vals, marker="o", label=f"Top {k}")
+            plt.xlabel("Tamaño del Dataset (N)")
+            plt.ylabel("Jaccard")
+            plt.title(f"Query {q_i + 1} - {label}")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.xticks(n_values, rotation=45)
+            plt.savefig(out_path / f"query{q_i + 1}_{label}.png")
+            plt.close()
+
+
 def main() -> None:
     """Run benchmarks for ``InvertedIndex`` and PostgreSQL."""
     results: list[list[float | int]] = []
     full: list[dict] = []
+
+    if Path(JSON_FILE).exists() and Path("benchmark_results.csv").exists():
+        print("Reusing existing benchmark data")
+        with open(JSON_FILE, "r", encoding="utf-8") as f:
+            full = json.load(f)
+        with open("benchmark_results.csv", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                r = [
+                    int(row["N"]),
+                    row["Mode"],
+                    float(row["MyIndex_ms"]),
+                    float(row["PostgreSQL_ts_rank_ms"]),
+                    float(row["PostgreSQL_ts_rank_cd_ms"]),
+                    float(row["ExactMatch"]),
+                    float(row["Jaccard"]),
+                ]
+                gist_val = row.get("PostgreSQL_ts_rank_GiST_ms")
+                if RUN_GIST and gist_val:
+                    try:
+                        r.append(float(gist_val))
+                    except ValueError:
+                        pass
+                results.append(r)
+        entry_map = {e["N"]: e for e in full}
+        generate_outputs(results, full, entry_map, save_files=False, output_dir=PLOTS_DIR)
+        return
 
     conn = None
     if RUN_POSTGRES:
@@ -541,145 +732,7 @@ def main() -> None:
     if conn:
         conn.close()
 
-    headers = [
-        "N",
-        "Mode",
-        "MyIndex_ms",
-        "PostgreSQL_ts_rank_ms",
-        "PostgreSQL_ts_rank_cd_ms",
-        "ExactMatch",
-        "Jaccard",
-    ]
-    if RUN_GIST:
-        headers.append("PostgreSQL_ts_rank_GiST_ms")
-    headers.extend(["IDs_sample", "MyIndex_sim", "Pg_sim", "JSON"])
-
-    table_rows: list[list[str]] = []
-    csv_rows: list[list[str]] = []
-
-    for row in results:
-        n, label = row[0], row[1]
-        entry = entry_map[n]
-        if label == "web":
-            prefix = "web_"
-        elif label == "custom":
-            prefix = "custom_"
-        else:
-            prefix = "plain_"
-
-        ids_short = ",".join(entry["MyIndex"]["ids"][0][:3])
-        if len(entry["MyIndex"]["ids"][0]) > 3:
-            ids_short += "..."
-        mi_sim_short = ",".join(
-            f"{s:.2f}" for s in entry["MyIndex"]["sims"][0][:3]
-        )
-        pg_sim_short = ",".join(
-            f"{s:.2f}" for s in entry[f"{prefix}ts_rank"]["sims"][0][:3]
-        )
-
-        row_str = [
-            str(n),
-            label,
-            f"{row[2]:.3f}",
-            f"{row[3]:.3f}",
-            f"{row[4]:.3f}",
-            f"{row[5]:.3f}",
-            f"{row[6]:.3f}",
-        ]
-        csv_row = row_str.copy()
-        if RUN_GIST and len(row) == 8:
-            row_str.append(f"{row[7]:.3f}")
-            csv_row.append(f"{row[7]:.3f}")
-
-        row_str.extend([ids_short, mi_sim_short, pg_sim_short, JSON_FILE])
-        table_rows.append(row_str)
-
-        ids_full = ",".join(entry["MyIndex"]["ids"][0][:5])
-        mi_sim_full = ",".join(
-            f"{s:.4f}" for s in entry["MyIndex"]["sims"][0][:5]
-        )
-        pg_sim_full = ",".join(
-            f"{s:.4f}" for s in entry[f"{prefix}ts_rank"]["sims"][0][:5]
-        )
-        csv_row.extend([ids_full, mi_sim_full, pg_sim_full, JSON_FILE])
-        csv_rows.append(csv_row)
-
-    print_table(headers, table_rows)
-    write_csv("benchmark_results.csv", headers, csv_rows)
-    save_full_results(full, JSON_FILE)
-
-    # Generate simple runtime comparison plots for each search mode
-    import pandas as pd
-    import matplotlib.pyplot as plt
-
-    grouped: dict[str, dict[str, list[float]]] = {}
-    for row in results:
-        n, label = row[0], row[1]
-        d = grouped.setdefault(label, {"N": [], "MyIndex": [], "ts_rank": [], "ts_rank_cd": [], "GiST": []})
-        d["N"].append(n)
-        d["MyIndex"].append(row[2])
-        d["ts_rank"].append(row[3])
-        d["ts_rank_cd"].append(row[4])
-        if RUN_GIST and len(row) == 8:
-            d["GiST"].append(row[7])
-
-    for label, d in grouped.items():
-        df = pd.DataFrame(d)
-        plt.figure(figsize=(10, 6))
-        plt.plot(df["N"], df["MyIndex"], label="MyIndex", marker="o")
-        plt.plot(df["N"], df["ts_rank"], label="ts_rank", marker="o")
-        plt.plot(df["N"], df["ts_rank_cd"], label="ts_rank_cd", marker="o")
-        if RUN_GIST and d["GiST"]:
-            plt.plot(df["N"][: len(d["GiST"])], d["GiST"], label="GiST", marker="o")
-        plt.xlabel("Tamaño del Dataset (N)")
-        plt.ylabel("Tiempo de búsqueda (ms)")
-        plt.title(f"Comparación de Tiempos - {label}")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.xticks(df["N"], rotation=45)
-        plt.show()
-
-    # Plot Jaccard metrics stored in ``full``
-    n_values = [entry["N"] for entry in full]
-    for label in grouped.keys():
-        if label == "web":
-            prefix = "web_"
-        elif label == "custom":
-            prefix = "custom_"
-        else:
-            prefix = "plain_"
-        # Global Jaccard averages
-        for k in TOP_K_VALUES:
-            vals = [entry["metrics"][f"{prefix}ts_rank"][k]["jacc_avg"] for entry in full]
-            plt.figure(figsize=(10, 6))
-            plt.plot(n_values, vals, marker="o")
-            plt.xlabel("Tamaño del Dataset (N)")
-            plt.ylabel("Jaccard")
-            plt.title(f"Jaccard Promedio Top {k} - {label}")
-            plt.grid(True)
-            plt.tight_layout()
-            plt.xticks(n_values, rotation=45)
-            plt.show()
-
-        # Per-query Jaccard
-        num_q = len(ALL_QUERIES)
-        for q_i in range(num_q):
-            plt.figure(figsize=(10, 6))
-            for k in TOP_K_VALUES:
-                vals = [
-                    entry["metrics"][f"{prefix}ts_rank"][k]["jacc_list"][q_i]
-                    for entry in full
-                ]
-                plt.plot(n_values, vals, marker="o", label=f"Top {k}")
-            plt.xlabel("Tamaño del Dataset (N)")
-            plt.ylabel("Jaccard")
-            plt.title(f"Query {q_i + 1} - {label}")
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.xticks(n_values, rotation=45)
-            plt.show()
+    generate_outputs(results, full, entry_map, output_dir=PLOTS_DIR)
 
 
 if __name__ == '__main__':
