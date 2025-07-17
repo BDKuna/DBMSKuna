@@ -1,4 +1,9 @@
-"""Benchmarking text search using custom inverted index and PostgreSQL."""
+"""Benchmark text search using the custom inverted index and PostgreSQL.
+
+This script compares search speed and result quality between ``InvertedIndex``
+and PostgreSQL full text search.  Two ranking functions are measured for
+PostgreSQL: ``ts_rank`` and ``ts_rank_cd``.
+"""
 
 import csv
 import os
@@ -28,6 +33,19 @@ QUERIES = [
     "alien invasion",
     "superhero origin",
 ]
+
+# Additional edge-case queries
+ALL_QUERIES = QUERIES + [
+    '"jurassic park"',
+    "matrix",
+    "jurassic park park",
+    "jurassic & park",
+    "jurassic | monster",
+]
+
+# Sizes used when running the optional GiST experiment
+GIST_SIZES = [16000, 64000]
+RUN_GIST = False
 
 # Path to the full dataset
 DATASET_PATH = Path("datasets/data2/mpst_full_data.csv")
@@ -63,22 +81,23 @@ def create_tmp_csv(n: int) -> Path:
     return tmp_csv
 
 
-def benchmark_myindex(n: int, queries: list[str]) -> float:
-    """Build and query the custom inverted index."""
+def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]]]:
+    """Build ``InvertedIndex`` and return timing and results for each query."""
     tmp_csv = create_tmp_csv(n)
-    index_path = processingDatasetOnInvertedFile(
-        str(tmp_csv), column="plot_synopsis"
-    )
+    index_path = processingDatasetOnInvertedFile(str(tmp_csv))
     idx = InvertedIndex(index_path)
     idx.buildIndex()
 
-    timings = []
+    timings: list[float] = []
+    results: list[list[str]] = []
     for q in queries:
-        # Measure average search time over five executions
+        res = None
         start = time.perf_counter()
         for _ in range(5):
-            idx.searchQuery(q, limit=5)
+            res = idx.searchQuery(q, limit=5)
         timings.append((time.perf_counter() - start) / 5)
+        ids = [doc_id for doc_id, _ in res or []]
+        results.append(ids)
 
     avg_ms = sum(timings) / len(timings) * 1000
 
@@ -100,7 +119,36 @@ def parse_execution_time(plan_rows: list[tuple[str]]) -> float:
     return float(match.group(1)) if match else 0.0
 
 
-def benchmark_postgres(n: int, queries: list[str], conn) -> float:
+def tsquery_function(query: str) -> tuple[str, str]:
+    """Select the PostgreSQL tsquery function for a given query."""
+    if query.startswith('"') and query.endswith('"'):
+        return "phraseto_tsquery", query.strip('"')
+    if "&" in query or "|" in query:
+        return "to_tsquery", query
+    return "plainto_tsquery", query
+
+
+def compute_quality(
+    my_res: list[list[str]], pg_res: list[list[str]]
+) -> tuple[float, float]:
+    """Return exact-match ratio and average Jaccard index."""
+    exact = [1.0 if set(m) == set(p) else 0.0 for m, p in zip(my_res, pg_res)]
+    jacc = []
+    for m, p in zip(my_res, pg_res):
+        s1, s2 = set(m), set(p)
+        inter = len(s1 & s2)
+        union = len(s1 | s2)
+        jacc.append(inter / union if union else 1.0)
+    return sum(exact) / len(exact), sum(jacc) / len(jacc)
+
+
+def benchmark_postgres(
+    n: int,
+    queries: list[str],
+    conn,
+    ranking: str = "ts_rank",
+    use_gist: bool = False,
+) -> tuple[float, list[list[str]]]:
     """Load data into PostgreSQL and run text search."""
     tmp_csv = create_tmp_csv(n)
     cur = conn.cursor()
@@ -122,69 +170,128 @@ def benchmark_postgres(n: int, queries: list[str], conn) -> float:
         "UPDATE movies SET document_with_weights = "
         "to_tsvector('english', plot_synopsis)"
     )
-    # Create GIN index for full-text search
+    index_type = "GiST" if use_gist else "GIN"
     cur.execute(
-        "CREATE INDEX idx_movies_fts ON movies USING GIN(document_with_weights)"
+        f"CREATE INDEX idx_movies_fts ON movies USING {index_type}(document_with_weights)"
     )
     conn.commit()
 
-    timings = []
+    timings: list[float] = []
+    results: list[list[str]] = []
     for q in queries:
+        func, prepared = tsquery_function(q)
         total = 0.0
         for _ in range(5):
             cur.execute(
-                """EXPLAIN (ANALYZE, BUFFERS)
+                f"""EXPLAIN (ANALYZE, BUFFERS)
                 SELECT id,
-                       ts_rank(document_with_weights,
-                               plainto_tsquery('english', %(q)s)) AS rank
+                       {ranking}(document_with_weights,
+                                {func}('english', %(q)s)) AS rank
                 FROM movies
-                WHERE document_with_weights @@ plainto_tsquery('english', %(q)s)
+                WHERE document_with_weights @@ {func}('english', %(q)s)
                 ORDER BY rank DESC
                 LIMIT 5
                 """,
-                {"q": q},
+                {"q": prepared},
             )
             plan = cur.fetchall()
             total += parse_execution_time(plan)
         timings.append(total / 5)
+
+        cur.execute(
+            f"""SELECT id,
+                       {ranking}(document_with_weights,
+                               {func}('english', %(q)s)) AS rank
+                FROM movies
+                WHERE document_with_weights @@ {func}('english', %(q)s)
+                ORDER BY rank DESC
+                LIMIT 5""",
+            {"q": prepared},
+        )
+        ids = [str(row[0] - 1) for row in cur.fetchall()]
+        results.append(ids)
     avg_ms = sum(timings) / len(timings)
 
     cur.close()
     if tmp_csv.exists():
         os.remove(tmp_csv)
 
-    return avg_ms
+    return avg_ms, results
 
 
 def main() -> None:
-    """Run benchmarks for the custom index and PostgreSQL."""
-    results_my: list[tuple[int, str, float]] = []
-    results_pg: list[tuple[int, str, float]] = []
+    """Run benchmarks for ``InvertedIndex`` and PostgreSQL."""
+    results: list[list[float | int]] = []
 
     conn = psycopg2.connect(**PG_PARAMS)
     conn.autocommit = True
     for n in SIZES:
         print(f"Benchmarking MyIndex with N={n}")
-        my_time = benchmark_myindex(n, QUERIES)
-        results_my.append((n, "MyIndex", my_time))
+        my_time, my_res = benchmark_myindex(n, ALL_QUERIES)
 
-        print(f"Benchmarking PostgreSQL with N={n}")
-        pg_time = benchmark_postgres(n, QUERIES, conn)
-        results_pg.append((n, "PostgreSQL", pg_time))
+        print(f"Benchmarking PostgreSQL ts_rank with N={n}")
+        pg_time, pg_res = benchmark_postgres(n, ALL_QUERIES, conn)
+
+        print(f"Benchmarking PostgreSQL ts_rank_cd with N={n}")
+        pg_cd_time, _ = benchmark_postgres(
+            n, ALL_QUERIES, conn, ranking="ts_rank_cd"
+        )
+
+        exact, jacc = compute_quality(my_res, pg_res)
+
+        row = [n, my_time, pg_time, pg_cd_time, exact, jacc]
+
+        if RUN_GIST and n in GIST_SIZES:
+            print(f"Benchmarking PostgreSQL GiST ts_rank with N={n}")
+            gist_time, _ = benchmark_postgres(
+                n, ALL_QUERIES, conn, use_gist=True
+            )
+            row.append(gist_time)
+
+        results.append(row)
 
     conn.close()
 
-    header = f"| {'N':<6}| {'MyIndex (ms)':>12} | {'PostgreSQL (ms)':>15} |"
-    print(header)
-    print("|-----|--------------:|---------------:|")
-    for (n, _, m), (_, __, p) in zip(results_my, results_pg):
-        print(f"| {n:<4}| {m:12.3f} | {p:15.3f} |")
+    headers = [
+        "N",
+        "MyIndex_ms",
+        "PostgreSQL_ts_rank_ms",
+        "PostgreSQL_ts_rank_cd_ms",
+        "ExactMatch",
+        "Jaccard",
+    ]
+    if RUN_GIST:
+        headers.append("PostgreSQL_ts_rank_GiST_ms")
+
+    format_header = (
+        f"| {'N':<6}| {'MyIndex_ms':>14} | {'PostgreSQL_ts_rank_ms':>24} | "
+        f"{'PostgreSQL_ts_rank_cd_ms':>27} | {'ExactMatch':>10} | {'Jaccard':>8}"
+    )
+    if RUN_GIST:
+        format_header += " | {:>27}".format("PostgreSQL_ts_rank_GiST_ms")
+    format_header += " |"
+    print(format_header)
+
+    separator = "|-----|--------------:|------------------------:|-------------------------:|-----------:|---------:"  # noqa: E501
+    if RUN_GIST:
+        separator += "|-------------------------:|"
+    print(separator)
+
+    for row in results:
+        line = (
+            f"| {row[0]:<4}| {row[1]:14.3f} | {row[2]:24.3f} | {row[3]:27.3f} | "
+            f"{row[4]:10.2f} | {row[5]:8.2f}"
+        )
+        if RUN_GIST and len(row) == 7:
+            line += f" | {row[6]:27.3f}"
+        line += " |"
+        print(line)
 
     with open("benchmark_results.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["N", "MyIndex_ms", "PostgreSQL_ms"])
-        for (n, _, m), (_, __, p) in zip(results_my, results_pg):
-            writer.writerow([n, f"{m:.3f}", f"{p:.3f}"])
+        writer.writerow(headers)
+        for row in results:
+            writer.writerow([f"{v:.3f}" if isinstance(v, float) else v for v in row])
 
 
 if __name__ == '__main__':
