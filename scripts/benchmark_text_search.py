@@ -20,14 +20,31 @@ from core.text_file import TextFile
 
 # Reuse preprocessing files if they already exist
 REUSE_INDEX = True
+# Enable PostgreSQL benchmarking
+RUN_POSTGRES = True
+# Use websearch_to_tsquery instead of plainto_tsquery when COMPARE_BOTH_MODES
+# is False.  When ``COMPARE_BOTH_MODES`` is True both modes are benchmarked.
+USE_WEBSEARCH = False
+# Benchmark both ``plainto_tsquery`` and ``websearch_to_tsquery`` modes
+COMPARE_BOTH_MODES = True
 
 # Custom sizes can override the default benchmarking scale
 CUSTOM_SIZES: list[int] | None = []
 JSON_FILE = "benchmark_results_full.json"
 
+# List of tsquery functions to benchmark
+QUERY_FUNCS = [
+    "plainto_tsquery",
+    "websearch_to_tsquery",
+] if COMPARE_BOTH_MODES else [
+    "websearch_to_tsquery" if USE_WEBSEARCH else "plainto_tsquery"
+]
 
-# Dataset sizes used for each benchmark iteration
-SIZES = CUSTOM_SIZES or [1000, 5000, 10000, 20000, 40000, 80000, 160000]
+
+# Dataset sizes used for each benchmark iteration. These will be
+# trimmed to the dataset length at runtime so they never exceed the
+# number of available rows.
+DEFAULT_SIZES = [1000, 5000, 10000, 20000, 40000, 80000, 160000]
 
 # Fixed queries for measuring search performance
 QUERIES = [
@@ -41,15 +58,22 @@ QUERIES = [
     "world war ii",
     "alien invasion",
     "superhero origin",
+    "The Beatles"
+    "rock and roll"
+"minecraft fortnite skibidi among us tiktok blockchain NFT",
+    "cryptocurrency influencer AI art deepfake meme culture vending",
+    "y2k cosplay drone streaming e-girl vaporwave hypetrain",
 ]
 
 # Additional edge-case queries
 ALL_QUERIES = QUERIES + [
-    '"jurassic park"',
-    "matrix",
-    "jurassic park park",
-    "jurassic & park",
-    "jurassic | monster",
+# Fragmento completo de un documento
+    """Giorgio (Glauco Onorato), who explains that the knife belongs to his father, who has not been seen for five days. Giorgio offers a room to the young count, and subsequently introduces him to the rest of the family: his wife (Rika Dialina), their young son Ivan, Giorgio's younger brother Pietro (Massimo Righi), and sister Sdenka (Susy Anderson). It subsequently transpires that they are eagerly anticipating the arrival of their father, Gorcha, as well as the reason for his absence: he has gone to do battle with the outlaw and dreaded wurdalak Ali Beg. Vladimir is confused by the term, and Sdenka explains that a wurdalak is a walking cadaver who feeds on the blood of the living, preferably close friends and family members. Giorgio and Pietro are certain that the corpse Vladimir had discovered is that of Ali Beg, but also realize that there is a strong possibility that their father has been infected by the blood curse too. They warn the count to leave, but he decides to stay and await the old mans return. At the stroke of midnight, Gorcha (Boris Karloff) returns to the cottage. His sour demeanor and unkempt appearance bode the worse, and the two brothers are torn: they realize that it is their duty to kill Gorcha before he feeds on the family, but their love for him makes it difficult to reach a decision. Later that night, both Ivan and Pietro are attacked by Gorcha who drains them of blood, and then flees the cottage. Giorgio stakes and beheads Pietro to prevent him from reviving as a wurdalak. But he is prevented from doing so to Ivan when his wife threatens to commit suicide. Reluctantly, he agrees to bury the child without taking the necessary precautions. That same night, the child rises from his grave and begs to be invited into the cottage. The mother runs to her son's aid, stabbing Giorgio when he attempts to stop her, only to be greeted at the front door by Gorcha. The old man bites and infects his daughter-in-law, who then does the same for her husband. Vladimir and Sdenka flee from the cottage and go on the run and hide out in the ruins of an abandoned cathedral as dawn breaks. Vladimir is optimistic that a long and happy life lies with them. But Sdenka is reluctant to relinquish her family ties. She believes that she is meant to stay with the family. Sdenka's fears about her family are confirmed when that evening, Gorcha and her siblings show up at the abandoned Abbey. As Vladimir sleeps, Sdenka is lured into their loving arms where they bite to death. Awakened by her screams, Vladimir rushes to her aid, but the family has already taken her home, forcing the lover to follow suit.""",
+
+    # Fragmentos combinados de distintos documentos
+    """s of the New Sun swore an oath to resurrect hope in the land. The purity of their hearts was so great that Pelor, the God of Light, gave the Knights powerful amulets with which to channel his power. Transcendent with divine might, the Knights of the New Sun pierced the shadow that had darkened the land for twelve hundred years and cast it asunder. But not all were awed by their glory. The disciples of Nhagruul disassembled the book and bribed three greedy souls to hide the pieces until they could be retrieved. The ink was discovered and destroyed but, despite years of searching, the cover and pages were never found. Peace ruled the land for centuries and the Knights got lost in the light of their own glory. As memory of the awful events faded so did the power of servants of Pelor.
+    Klara is there waiting for him, with the chosen book and wearing a red carnation they'd agreed to use as a signal. Realizing that he'd been wrong about her all along, and that his irritation with her was actually masking his attraction, he finally enters and goes over to her table, but does not reveal his true reason for being there although he is aware she will be hurt that her pen pal doesn't show up.
+    Glenn sacrificing his summer vacation, which he intended to use to work on his composing, in order to make extra money teaching Driver's Ed. Glenn does right by his family but he knows he can forget about getting out of the teaching gig for the foreseeable future. Continuing his new, unorthodox teaching methods, he finally gets Gertrude, who was on the verge of giving up, to have a breakthrough and become a more skilled clarinet player. She rediscovers her joy of playing, and the now-competent band go on to play at the 1965 graduation. Summer vacation begins, and Glenn follows through on his plan to teach Driver's Ed, having a series of near-death experiences at the hands of new drivers. Glenn and Iris move into their new house. Soon, we see the Driver's Ed car once again, except this time it is Glenn himself driving like a maniac, breaking every traffic law – so that he could get to the hospital to see his newborn son, Coltrane ("Cole").""",
 ]
 
 # Sizes used when running the optional GiST experiment
@@ -60,6 +84,30 @@ RUN_GIST = True
 DATASET_PATH = Path("datasets/data2/mpst_full_data.csv")
 # Temporary directory for generated CSV files
 TMP_DIR = Path(".")
+
+# Determine the total number of rows in the dataset (excluding header)
+
+
+def dataset_row_count(path: Path) -> int:
+    """Return the number of documents available in ``path``."""
+    with open(path, newline="", encoding="utf-8") as f:
+        return sum(1 for _ in f) - 1
+
+
+DATASET_ROWS = dataset_row_count(DATASET_PATH)
+
+
+def build_sizes() -> list[int]:
+    """Return the benchmark sizes limited to the dataset length."""
+    base = CUSTOM_SIZES or DEFAULT_SIZES
+    sizes = sorted(set(n for n in base if n <= DATASET_ROWS))
+    if DATASET_ROWS not in sizes:
+        if not sizes or sizes[-1] < DATASET_ROWS:
+            sizes.append(DATASET_ROWS)
+    return sizes
+
+
+SIZES = build_sizes()
 
 # Connection parameters for the PostgreSQL instance
 PG_PARAMS = {
@@ -92,6 +140,7 @@ def create_tmp_csv(n: int) -> Path:
             )
     return tmp_csv
 
+
 def ensure_text_files(csv_path: Path) -> str:
     """Generate TextFile data for a CSV if missing."""
     tf = TextFile(str(csv_path))
@@ -119,9 +168,26 @@ def cache_index(csv_path: Path) -> str:
     return processingDatasetOnInvertedFile(base)
 
 
+def cleanup_index(csv_path: Path) -> None:
+    """Remove temporary files generated for ``csv_path``."""
+    base = csv_path.name
+    paths = [
+        csv_path,
+        csv_path.parent / f"{base}_inv.dat",
+        csv_path.parent / f"{base}_doc.dat",
+        csv_path.parent / f"{base}_data.dat",
+        csv_path.parent / f"{base}_lengths.dat",
+        csv_path.parent / f"{base}_lengths.dat_lengths.dat",
+    ]
+    for path in paths:
+        if path.exists():
+            path.unlink()
 
-def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]]]:
-    """Build ``InvertedIndex`` and return timing and results for each query."""
+
+def benchmark_myindex(
+    n: int, queries: list[str]
+) -> tuple[float, list[list[str]], list[list[float]]]:
+    """Build ``InvertedIndex`` and return timings, IDs and scores."""
     tmp_csv = create_tmp_csv(n)
     index_path = cache_index(tmp_csv)
     idx = InvertedIndex(index_path)
@@ -131,7 +197,8 @@ def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]
         built_flag.touch()
 
     timings: list[float] = []
-    results: list[list[str]] = []
+    ids_res: list[list[str]] = []
+    sims_res: list[list[float]] = []
     for q in queries:
         res = None
         start = time.perf_counter()
@@ -139,32 +206,16 @@ def benchmark_myindex(n: int, queries: list[str]) -> tuple[float, list[list[str]
             res = idx.searchQuery(q, limit=5)
         timings.append((time.perf_counter() - start) / 5)
         ids = [doc_id for doc_id, _ in res or []]
-        results.append(ids)
+        sims = [score for _, score in res or []]
+        ids_res.append(ids)
+        sims_res.append(sims)
 
     avg_ms = sum(timings) / len(timings) * 1000
 
     if not REUSE_INDEX:
-        base = tmp_csv.name
-        inv_dat = tmp_csv.parent / f"{base}_inv.dat"
-        doc_dat = tmp_csv.parent / f"{base}_doc.dat"
-        data_dat = tmp_csv.parent / f"{base}_data.dat"
-        lengths_dat = tmp_csv.parent / f"{base}_lengths.dat"
-        extra_lengths = tmp_csv.parent / (
-            f"{base}_lengths.dat_lengths.dat"
-        )
+        cleanup_index(tmp_csv)
 
-        for path in (
-            tmp_csv,
-            inv_dat,
-            doc_dat,
-            data_dat,
-            lengths_dat,
-            extra_lengths,
-        ):
-            if path.exists():
-                path.unlink()
-
-    return avg_ms, results
+    return avg_ms, ids_res, sims_res
 
 
 def parse_execution_time(plan_rows: list[tuple[str]]) -> float:
@@ -174,27 +225,22 @@ def parse_execution_time(plan_rows: list[tuple[str]]) -> float:
     return float(match.group(1)) if match else 0.0
 
 
-def tsquery_function(query: str) -> tuple[str, str]:
-    """Select the PostgreSQL tsquery function for a given query."""
-    if query.startswith('"') and query.endswith('"'):
-        return "phraseto_tsquery", query.strip('"')
-    if "&" in query or "|" in query:
-        return "to_tsquery", query
-    return "plainto_tsquery", query
-
-
 def compute_quality(
     my_res: list[list[str]], pg_res: list[list[str]]
-) -> tuple[float, float]:
-    """Return exact-match ratio and average Jaccard index."""
-    exact = [1.0 if set(m) == set(p) else 0.0 for m, p in zip(my_res, pg_res)]
-    jacc = []
+) -> tuple[float, float, list[bool], list[float]]:
+    """Return aggregated and per-query quality metrics."""
+    exact_list: list[bool] = []
+    jacc_list: list[float] = []
     for m, p in zip(my_res, pg_res):
         s1, s2 = set(m), set(p)
-        inter = len(s1 & s2)
+        exact_list.append(s1 == s2)
         union = len(s1 | s2)
-        jacc.append(inter / union if union else 1.0)
-    return sum(exact) / len(exact), sum(jacc) / len(jacc)
+        inter = len(s1 & s2)
+        jacc_list.append(inter / union if union else 1.0)
+
+    exact_avg = sum(1.0 for e in exact_list if e) / len(exact_list)
+    jacc_avg = sum(jacc_list) / len(jacc_list)
+    return exact_avg, jacc_avg, exact_list, jacc_list
 
 
 def benchmark_postgres(
@@ -202,9 +248,13 @@ def benchmark_postgres(
     queries: list[str],
     conn,
     ranking: str = "ts_rank",
+    query_func: str = "plainto_tsquery",
     use_gist: bool = False,
-) -> tuple[float, list[list[str]]]:
-    """Load data into PostgreSQL and run text search."""
+) -> tuple[float, list[list[str]], list[list[float]]]:
+    """Load data into PostgreSQL and run text search.
+
+    Returns timing in milliseconds, list of document IDs and their ranks.
+    """
     tmp_csv = create_tmp_csv(n)
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS movies")
@@ -236,9 +286,11 @@ def benchmark_postgres(
     conn.commit()
 
     timings: list[float] = []
-    results: list[list[str]] = []
+    ids_res: list[list[str]] = []
+    ranks_res: list[list[float]] = []
     for q in queries:
-        func, prepared = tsquery_function(q)
+        func = query_func
+        prepared = q
         total = 0.0
         for _ in range(5):
             cur.execute(
@@ -267,15 +319,16 @@ def benchmark_postgres(
                 LIMIT 5""",
             {"q": prepared},
         )
-        ids = [str(row[0] - 1) for row in cur.fetchall()]
-        results.append(ids)
+        rows = cur.fetchall()
+        ids_res.append([str(r[0] - 1) for r in rows])
+        ranks_res.append([float(r[1]) for r in rows])
     avg_ms = sum(timings) / len(timings)
 
     cur.close()
-    if not REUSE_INDEX and tmp_csv.exists():
-        os.remove(tmp_csv)
+    if not REUSE_INDEX:
+        cleanup_index(tmp_csv)
 
-    return avg_ms, results
+    return avg_ms, ids_res, ranks_res
 
 
 def save_full_results(data: list[dict], path: str) -> None:
@@ -284,89 +337,172 @@ def save_full_results(data: list[dict], path: str) -> None:
         json.dump(data, f, indent=2)
 
 
+def print_table(headers: list[str], rows: list[list[str]]) -> None:
+    """Print a Markdown table to stdout."""
+    print("| " + " | ".join(headers) + " |")
+    print("| " + " | ".join("-" * len(h) for h in headers) + " |")
+    for row in rows:
+        print("| " + " | ".join(row) + " |")
+
+
+def write_csv(path: str, headers: list[str], rows: list[list[str]]) -> None:
+    """Save table rows to a CSV file."""
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        writer.writerows(rows)
+
+
 def main() -> None:
     """Run benchmarks for ``InvertedIndex`` and PostgreSQL."""
     results: list[list[float | int]] = []
     full: list[dict] = []
 
-    try:
-        conn = psycopg2.connect(**PG_PARAMS)
-        conn.autocommit = True
-    except Exception as exc:
-        print(f"PostgreSQL connection failed: {exc}")
-        conn = None
+    conn = None
+    if RUN_POSTGRES:
+        try:
+            conn = psycopg2.connect(**PG_PARAMS)
+            conn.autocommit = True
+        except Exception as exc:
+            print(f"PostgreSQL connection failed: {exc}")
+            conn = None
     for n in SIZES:
         print(f"Benchmarking MyIndex with N={n}")
-        my_time, my_res = benchmark_myindex(n, ALL_QUERIES)
+        my_time, my_ids, my_sims = benchmark_myindex(n, ALL_QUERIES)
 
-        if conn:
-            print(f"Benchmarking PostgreSQL ts_rank with N={n}")
-            pg_time, pg_res = benchmark_postgres(n, ALL_QUERIES, conn)
+        entry: dict[str, object] = {
+            "N": n,
+            "MyIndex": {
+                "time_ms": my_time,
+                "ids": my_ids,
+                "sims": my_sims,
+            },
+            "metrics": {},
+        }
 
-            print(f"Benchmarking PostgreSQL ts_rank_cd with N={n}")
-            pg_cd_time, pg_cd_res = benchmark_postgres(
-                n, ALL_QUERIES, conn, ranking="ts_rank_cd"
-            )
-        else:
-            pg_time, pg_res = 0.0, [[] for _ in ALL_QUERIES]
-            pg_cd_time, pg_cd_res = 0.0, [[] for _ in ALL_QUERIES]
+        for func in QUERY_FUNCS:
+            label = "web" if func == "websearch_to_tsquery" else "plain"
+            if conn:
+                print(f"[{label}] Benchmarking ts_rank with N={n}")
+                pg_time, pg_ids, pg_sims = benchmark_postgres(
+                    n,
+                    ALL_QUERIES,
+                    conn,
+                    ranking="ts_rank",
+                    query_func=func,
+                )
 
-        gist_time = None
-        gist_res: list[list[str]] | None = None
-        if conn and RUN_GIST and n in GIST_SIZES:
-            print(f"Benchmarking PostgreSQL GiST ts_rank with N={n}")
-            gist_time, gist_res = benchmark_postgres(
-                n, ALL_QUERIES, conn, use_gist=True
-            )
+                print(f"[{label}] Benchmarking ts_rank_cd with N={n}")
+                pg_cd_time, pg_cd_ids, pg_cd_sims = benchmark_postgres(
+                    n,
+                    ALL_QUERIES,
+                    conn,
+                    ranking="ts_rank_cd",
+                    query_func=func,
+                )
+            else:
+                pg_time, pg_ids, pg_sims = 0.0, [
+                    [] for _ in ALL_QUERIES
+                ], [
+                    [] for _ in ALL_QUERIES
+                ]
+                pg_cd_time, pg_cd_ids, pg_cd_sims = 0.0, [
+                    [] for _ in ALL_QUERIES
+                ], [
+                    [] for _ in ALL_QUERIES
+                ]
 
-        for q_i, q in enumerate(ALL_QUERIES):
-            print(f"- Query '{q}':")
-            print(f"  MyIndex: {my_res[q_i]}")
-            print(f"  ts_rank: {pg_res[q_i]}")
-            print(f"  ts_rank_cd: {pg_cd_res[q_i]}")
-            if gist_res:
-                print(f"  GiST: {gist_res[q_i]}")
+            gist_time = None
+            gist_ids: list[list[str]] | None = None
+            gist_sims: list[list[float]] | None = None
+            if conn and RUN_GIST and n in GIST_SIZES:
+                print(
+                    f"[{label}] Benchmarking PostgreSQL GiST ts_rank "
+                    f"with N={n}"
+                )
+                gist_time, gist_ids, gist_sims = benchmark_postgres(
+                    n,
+                    ALL_QUERIES,
+                    conn,
+                    query_func=func,
+                    use_gist=True,
+                )
 
-        exact, jacc = compute_quality(my_res, pg_res)
+            for q_i, q in enumerate(ALL_QUERIES):
+                print(f"- Query '{q}' ({label}):")
+                print(f"  MyIndex: {my_ids[q_i]}")
+                print(f"  ts_rank: {pg_ids[q_i]}")
+                print(f"  ts_rank_cd: {pg_cd_ids[q_i]}")
+                if gist_ids:
+                    print(f"  GiST: {gist_ids[q_i]}")
 
-        row = [n, my_time, pg_time, pg_cd_time, exact, jacc]
-        if gist_time is not None:
-            row.append(gist_time)
+            exact, jacc, ex_list, jac_list = compute_quality(my_ids, pg_ids)
 
-        results.append(row)
+            row = [n, label, my_time, pg_time, pg_cd_time, exact, jacc]
+            if gist_time is not None:
+                row.append(gist_time)
+            results.append(row)
 
-        full.append(
-            {
-                "N": n,
-                "MyIndex": {
-                    "time_ms": my_time,
-                    "results": my_res,
-                },
-                "ts_rank": {
-                    "time_ms": pg_time,
-                    "results": pg_res,
-                },
-                "ts_rank_cd": {
-                    "time_ms": pg_cd_time,
-                    "results": pg_cd_res,
-                },
-                "metrics": {
-                    "exact_match": exact,
-                    "jaccard": jacc,
-                },
+            prefix = f"{label}_"
+            entry[f"{prefix}ts_rank"] = {
+                "time_ms": pg_time,
+                "ids": pg_ids,
+                "sims": pg_sims,
             }
-        )
-        if gist_time is not None and gist_res is not None:
-            full[-1]["GiST"] = {
-                "time_ms": gist_time,
-                "results": gist_res,
+            entry[f"{prefix}ts_rank_cd"] = {
+                "time_ms": pg_cd_time,
+                "ids": pg_cd_ids,
+                "sims": pg_cd_sims,
             }
+            m: dict[str, dict] = {
+                f"{prefix}ts_rank": {
+                    "exact_match": ex_list,
+                    "jaccard": jac_list,
+                }
+            }
+            (
+                pgcd_exact,
+                pgcd_jacc,
+                pgcd_ex_list,
+                pgcd_jac_list,
+            ) = compute_quality(
+                my_ids,
+                pg_cd_ids,
+            )
+            m[f"{prefix}ts_rank_cd"] = {
+                "exact_match": pgcd_ex_list,
+                "jaccard": pgcd_jac_list,
+            }
+            if (
+                gist_time is not None
+                and gist_ids is not None
+                and gist_sims is not None
+            ):
+                entry[f"{prefix}GiST"] = {
+                    "time_ms": gist_time,
+                    "ids": gist_ids,
+                    "sims": gist_sims,
+                }
+                g_exact, g_jacc, g_ex_list, g_jac_list = compute_quality(
+                    my_ids,
+                    gist_ids,
+                )
+                m[f"{prefix}GiST"] = {
+                    "exact_match": g_ex_list,
+                    "jaccard": g_jac_list,
+                }
+            entry["metrics"].update(m)
+
+        full.append(entry)
+
+    entry_map = {e["N"]: e for e in full}
 
     if conn:
         conn.close()
 
     headers = [
         "N",
+        "Mode",
         "MyIndex_ms",
         "PostgreSQL_ts_rank_ms",
         "PostgreSQL_ts_rank_cd_ms",
@@ -375,45 +511,55 @@ def main() -> None:
     ]
     if RUN_GIST:
         headers.append("PostgreSQL_ts_rank_GiST_ms")
-    headers.extend(["IDs_sample", "JSON"])
+    headers.extend(["IDs_sample", "MyIndex_sim", "Pg_sim", "JSON"])
 
-    format_header = (
-        f"| {'N':<6}| {'MyIndex_ms':>14} | {'PostgreSQL_ts_rank_ms':>24} | "
-        f"{'PostgreSQL_ts_rank_cd_ms':>27} | {'ExactMatch':>10} | {'Jaccard':>8}"
-    )
-    if RUN_GIST:
-        format_header += " | {:>27}".format("PostgreSQL_ts_rank_GiST_ms")
-    format_header += " | {:>10} | {:>8} |"
-    print(format_header)
+    table_rows: list[list[str]] = []
+    csv_rows: list[list[str]] = []
 
-    separator = (
-        "|-----|--------------:|------------------------:|"
-        "---------------------------:|-----------:|---------:"
-    )  # noqa: E501
-    if RUN_GIST:
-        separator += "|-------------------------:|"
-    separator += "|------------|------|"
-    print(separator)
+    for row in results:
+        n, label = row[0], row[1]
+        entry = entry_map[n]
+        prefix = "web_" if label == "web" else "plain_"
 
-    for idx, row in enumerate(results):
-        ids_snippet = ",".join(full[idx]["MyIndex"]["results"][0][:3])
-        if len(full[idx]["MyIndex"]["results"][0]) > 3:
-            ids_snippet += "..."
-        line = (
-            f"| {row[0]:<4}| {row[1]:14.3f} | {row[2]:24.3f} | {row[3]:27.3f} | "
-            f"{row[4]:10.2f} | {row[5]:8.2f}"
+        ids_short = ",".join(entry["MyIndex"]["ids"][0][:3])
+        if len(entry["MyIndex"]["ids"][0]) > 3:
+            ids_short += "..."
+        mi_sim_short = ",".join(
+            f"{s:.2f}" for s in entry["MyIndex"]["sims"][0][:3]
         )
-        if RUN_GIST and len(row) == 7:
-            line += f" | {row[6]:27.3f}"
-        line += f" | {ids_snippet:<10} | {JSON_FILE:<8} |"
-        print(line)
+        pg_sim_short = ",".join(
+            f"{s:.2f}" for s in entry[f"{prefix}ts_rank"]["sims"][0][:3]
+        )
 
-    with open("benchmark_results.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(headers)
-        for row in results:
-            writer.writerow([f"{v:.3f}" if isinstance(v, float) else v for v in row])
+        row_str = [
+            str(n),
+            label,
+            f"{row[2]:.3f}",
+            f"{row[3]:.3f}",
+            f"{row[4]:.3f}",
+            f"{row[5]:.3f}",
+            f"{row[6]:.3f}",
+        ]
+        csv_row = row_str.copy()
+        if RUN_GIST and len(row) == 8:
+            row_str.append(f"{row[7]:.3f}")
+            csv_row.append(f"{row[7]:.3f}")
 
+        row_str.extend([ids_short, mi_sim_short, pg_sim_short, JSON_FILE])
+        table_rows.append(row_str)
+
+        ids_full = ",".join(entry["MyIndex"]["ids"][0][:5])
+        mi_sim_full = ",".join(
+            f"{s:.4f}" for s in entry["MyIndex"]["sims"][0][:5]
+        )
+        pg_sim_full = ",".join(
+            f"{s:.4f}" for s in entry[f"{prefix}ts_rank"]["sims"][0][:5]
+        )
+        csv_row.extend([ids_full, mi_sim_full, pg_sim_full, JSON_FILE])
+        csv_rows.append(csv_row)
+
+    print_table(headers, table_rows)
+    write_csv("benchmark_results.csv", headers, csv_rows)
     save_full_results(full, JSON_FILE)
 
 
