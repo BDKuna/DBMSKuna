@@ -21,6 +21,8 @@ from core.text_file import TextFile
 
 # Reuse preprocessing files if they already exist
 REUSE_INDEX = True
+# Avoid regenerating TextFile preprocessing if data files already exist
+REUSE_TEXT = True
 # Enable PostgreSQL benchmarking
 RUN_POSTGRES = True
 # Use websearch_to_tsquery instead of plainto_tsquery when COMPARE_BOTH_MODES
@@ -32,6 +34,9 @@ COMPARE_BOTH_MODES = True
 # Custom sizes can override the default benchmarking scale
 CUSTOM_SIZES: list[int] | None = []
 JSON_FILE = "benchmark_results_full.json"
+
+# Different top-k values used when computing Jaccard metrics
+TOP_K_VALUES = [5, 10, 20, 50, 100]
 
 # List of tsquery functions to benchmark. A custom mode ``custom_bow``
 # converts the query using ``bagOfWords`` and joins the tokens with
@@ -162,7 +167,7 @@ def create_tmp_csv(n: int) -> Path:
 def ensure_text_files(csv_path: Path) -> str:
     """Generate TextFile data for a CSV if missing."""
     tf = TextFile(str(csv_path))
-    if not Path(tf.data_path).exists():
+    if not (REUSE_TEXT and Path(tf.data_path).exists()):
         tf.initialize()
         with open(csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -203,7 +208,7 @@ def cleanup_index(csv_path: Path) -> None:
 
 
 def benchmark_myindex(
-    n: int, queries: list[str]
+    n: int, queries: list[str], top_k: int
 ) -> tuple[float, list[list[str]], list[list[float]]]:
     """Build ``InvertedIndex`` and return timings, IDs and scores."""
     tmp_csv = create_tmp_csv(n)
@@ -221,7 +226,7 @@ def benchmark_myindex(
         res = None
         start = time.perf_counter()
         for _ in range(5):
-            res = idx.searchQuery(q, limit=5)
+            res = idx.searchQuery(q, limit=top_k)
         timings.append((time.perf_counter() - start) / 5)
         ids = [doc_id for doc_id, _ in res or []]
         sims = [score for _, score in res or []]
@@ -244,21 +249,30 @@ def parse_execution_time(plan_rows: list[tuple[str]]) -> float:
 
 
 def compute_quality(
-    my_res: list[list[str]], pg_res: list[list[str]]
-) -> tuple[float, float, list[bool], list[float]]:
-    """Return aggregated and per-query quality metrics."""
-    exact_list: list[bool] = []
-    jacc_list: list[float] = []
-    for m, p in zip(my_res, pg_res):
-        s1, s2 = set(m), set(p)
-        exact_list.append(s1 == s2)
-        union = len(s1 | s2)
-        inter = len(s1 & s2)
-        jacc_list.append(inter / union if union else 1.0)
-
-    exact_avg = sum(1.0 for e in exact_list if e) / len(exact_list)
-    jacc_avg = sum(jacc_list) / len(jacc_list)
-    return exact_avg, jacc_avg, exact_list, jacc_list
+    my_res: list[list[str]],
+    pg_res: list[list[str]],
+    ks: list[int],
+) -> dict[int, dict[str, list | float]]:
+    """Return quality metrics for each ``k`` value."""
+    metrics: dict[int, dict[str, list | float]] = {}
+    for k in ks:
+        exact_list: list[bool] = []
+        jacc_list: list[float] = []
+        for m, p in zip(my_res, pg_res):
+            s1, s2 = set(m[:k]), set(p[:k])
+            exact_list.append(s1 == s2)
+            union = len(s1 | s2)
+            inter = len(s1 & s2)
+            jacc_list.append(inter / union if union else 1.0)
+        exact_avg = sum(1.0 for e in exact_list if e) / len(exact_list)
+        jacc_avg = sum(jacc_list) / len(jacc_list)
+        metrics[k] = {
+            "exact_avg": exact_avg,
+            "jacc_avg": jacc_avg,
+            "exact_list": exact_list,
+            "jacc_list": jacc_list,
+        }
+    return metrics
 
 
 def benchmark_postgres(
@@ -268,6 +282,7 @@ def benchmark_postgres(
     ranking: str = "ts_rank",
     query_func: str = "plainto_tsquery",
     use_gist: bool = False,
+    top_k: int = max(TOP_K_VALUES),
 ) -> tuple[float, list[list[str]], list[list[float]]]:
     """Load data into PostgreSQL and run text search.
 
@@ -322,7 +337,7 @@ def benchmark_postgres(
                 FROM movies
                 WHERE document_with_weights @@ {func}('english', %(q)s)
                 ORDER BY rank DESC
-                LIMIT 5
+                LIMIT {top_k}
                 """,
                 {"q": prepared},
             )
@@ -337,7 +352,7 @@ def benchmark_postgres(
                 FROM movies
                 WHERE document_with_weights @@ {func}('english', %(q)s)
                 ORDER BY rank DESC
-                LIMIT 5""",
+                LIMIT {top_k}""",
             {"q": prepared},
         )
         rows = cur.fetchall()
@@ -387,9 +402,10 @@ def main() -> None:
         except Exception as exc:
             print(f"PostgreSQL connection failed: {exc}")
             conn = None
+    max_k = max(TOP_K_VALUES)
     for n in SIZES:
         print(f"Benchmarking MyIndex with N={n}")
-        my_time, my_ids, my_sims = benchmark_myindex(n, ALL_QUERIES)
+        my_time, my_ids, my_sims = benchmark_myindex(n, ALL_QUERIES, max_k)
 
         entry: dict[str, object] = {
             "N": n,
@@ -416,6 +432,7 @@ def main() -> None:
                     conn,
                     ranking="ts_rank",
                     query_func=func,
+                    top_k=max_k,
                 )
 
                 print(f"[{label}] Benchmarking ts_rank_cd with N={n}")
@@ -425,6 +442,7 @@ def main() -> None:
                     conn,
                     ranking="ts_rank_cd",
                     query_func=func,
+                    top_k=max_k,
                 )
             else:
                 pg_time, pg_ids, pg_sims = 0.0, [
@@ -452,6 +470,7 @@ def main() -> None:
                     conn,
                     query_func=func,
                     use_gist=True,
+                    top_k=max_k,
                 )
 
             for q_i, q in enumerate(ALL_QUERIES):
@@ -462,7 +481,9 @@ def main() -> None:
                 if gist_ids:
                     print(f"  GiST: {gist_ids[q_i]}")
 
-            exact, jacc, ex_list, jac_list = compute_quality(my_ids, pg_ids)
+            metrics_ts = compute_quality(my_ids, pg_ids, TOP_K_VALUES)
+            jacc = metrics_ts[TOP_K_VALUES[0]]["jacc_avg"]
+            exact = metrics_ts[TOP_K_VALUES[0]]["exact_avg"]
 
             print(f"[{label}] Jaccard ts_rank vs MyIndex: {jacc:.3f}")
 
@@ -483,25 +504,16 @@ def main() -> None:
                 "sims": pg_cd_sims,
             }
             m: dict[str, dict] = {
-                f"{prefix}ts_rank": {
-                    "exact_match": ex_list,
-                    "jaccard": jac_list,
-                }
+                f"{prefix}ts_rank": metrics_ts
             }
-            (
-                pgcd_exact,
-                pgcd_jacc,
-                pgcd_ex_list,
-                pgcd_jac_list,
-            ) = compute_quality(
+            metrics_cd = compute_quality(
                 my_ids,
                 pg_cd_ids,
+                TOP_K_VALUES,
             )
+            pgcd_jacc = metrics_cd[TOP_K_VALUES[0]]["jacc_avg"]
             print(f"[{label}] Jaccard ts_rank_cd vs MyIndex: {pgcd_jacc:.3f}")
-            m[f"{prefix}ts_rank_cd"] = {
-                "exact_match": pgcd_ex_list,
-                "jaccard": pgcd_jac_list,
-            }
+            m[f"{prefix}ts_rank_cd"] = metrics_cd
             if (
                 gist_time is not None
                 and gist_ids is not None
@@ -512,15 +524,14 @@ def main() -> None:
                     "ids": gist_ids,
                     "sims": gist_sims,
                 }
-                g_exact, g_jacc, g_ex_list, g_jac_list = compute_quality(
+                metrics_g = compute_quality(
                     my_ids,
                     gist_ids,
+                    TOP_K_VALUES,
                 )
+                g_jacc = metrics_g[TOP_K_VALUES[0]]["jacc_avg"]
                 print(f"[{label}] Jaccard GiST vs MyIndex: {g_jacc:.3f}")
-                m[f"{prefix}GiST"] = {
-                    "exact_match": g_ex_list,
-                    "jaccard": g_jac_list,
-                }
+                m[f"{prefix}GiST"] = metrics_g
             entry["metrics"].update(m)
 
         full.append(entry)
@@ -628,6 +639,47 @@ def main() -> None:
         plt.tight_layout()
         plt.xticks(df["N"], rotation=45)
         plt.show()
+
+    # Plot Jaccard metrics stored in ``full``
+    n_values = [entry["N"] for entry in full]
+    for label in grouped.keys():
+        if label == "web":
+            prefix = "web_"
+        elif label == "custom":
+            prefix = "custom_"
+        else:
+            prefix = "plain_"
+        # Global Jaccard averages
+        for k in TOP_K_VALUES:
+            vals = [entry["metrics"][f"{prefix}ts_rank"][k]["jacc_avg"] for entry in full]
+            plt.figure(figsize=(10, 6))
+            plt.plot(n_values, vals, marker="o")
+            plt.xlabel("Tamaño del Dataset (N)")
+            plt.ylabel("Jaccard")
+            plt.title(f"Jaccard Promedio Top {k} - {label}")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.xticks(n_values, rotation=45)
+            plt.show()
+
+        # Per-query Jaccard
+        num_q = len(ALL_QUERIES)
+        for q_i in range(num_q):
+            plt.figure(figsize=(10, 6))
+            for k in TOP_K_VALUES:
+                vals = [
+                    entry["metrics"][f"{prefix}ts_rank"][k]["jacc_list"][q_i]
+                    for entry in full
+                ]
+                plt.plot(n_values, vals, marker="o", label=f"Top {k}")
+            plt.xlabel("Tamaño del Dataset (N)")
+            plt.ylabel("Jaccard")
+            plt.title(f"Query {q_i + 1} - {label}")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.xticks(n_values, rotation=45)
+            plt.show()
 
 
 if __name__ == '__main__':
