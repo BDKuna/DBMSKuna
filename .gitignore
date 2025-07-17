@@ -8,3 +8,4 @@
 *.pyc
 .venv
 pgdata
+!benchmark_results.csv
